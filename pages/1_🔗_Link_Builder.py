@@ -341,13 +341,13 @@ with tab1:
         )
         dr_min_t1 = st.number_input(
             "DR мін",
-            value=20, min_value=0, max_value=100, key="dr_t1",
-            help="Domain Rating від Ahrefs. Рекомендовано ≥ 20.",
+            value=20, min_value=20, max_value=100, key="dr_t1",
+            help="Domain Rating від Ahrefs. Мінімум 20 — база не містить сайтів нижче цього порогу.",
         )
         traffic_min_t1 = st.number_input(
             "Органічний трафік мін",
-            value=15000, step=1000, key="tr_t1",
-            help="Мінімум органічних відвідувачів на місяць.",
+            value=15000, min_value=5000, step=1000, key="tr_t1",
+            help="Мінімум органічних відвідувачів на місяць. Мінімум 5 000 — база не містить сайтів нижче.",
         )
         pct_organic_t1 = st.slider(
             "Мінімальна частка органіки (%)",
