@@ -35,8 +35,12 @@ def analyze_traffic_health(points: list) -> dict:
         if hist_median < 1000 and recent_max > max(hist_median, 500) * 5:
             return {"status": "spike", "label": "⚠️ Підозрілий трафік"}
 
-    # Pattern 2 — Penalty
-    if all_peak > 5000 and all(v < all_peak * 0.3 for v in recent) and recent_avg < all_peak * 0.3:
+    # Pattern 2 — Penalty: dropped from peak AND current traffic is truly low (< 20K)
+    # Sites that dropped from e.g. 600K → 70K are still viable donors (70K is decent)
+    if (all_peak > 5000
+            and all(v < all_peak * 0.3 for v in recent)
+            and recent_avg < all_peak * 0.3
+            and recent_avg < 20_000):
         return {"status": "penalty", "label": "📉 Трафік впав після апдейту"}
 
     return {"status": "ok", "label": ""}
