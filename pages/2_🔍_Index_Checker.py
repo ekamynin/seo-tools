@@ -8,6 +8,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+st.set_page_config(page_title="Index Checker", page_icon="🔍", layout="wide")
+
 # ── URL validation ─────────────────────────────────────────────────────────────
 _PRIVATE_HOST = re.compile(
     r'^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|metadata\.google\.internal)',

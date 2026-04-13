@@ -5,6 +5,8 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+st.set_page_config(page_title="Link Builder", page_icon="🔗", layout="wide")
+
 from collaborator_api import fetch_all_sites, parse_site
 from ahrefs_api import enrich_with_ahrefs
 from link_builder import (
