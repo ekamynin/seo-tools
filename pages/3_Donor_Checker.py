@@ -131,8 +131,8 @@ if run_btn:
             rows.append({
                 "Домен": d,
                 "В Collaborator": "Так",
-                "Ціна публікації (грн)": int(price)   if price   else None,
-                "Ціна написання (грн)":  int(price_w) if price_w else None,
+                "Ціна публікації (грн)": int(price)   if price   and pd.notna(price)   else None,
+                "Ціна написання (грн)":  int(price_w) if price_w and pd.notna(price_w) else None,
                 "Тематика": site.get("categories", ""),
                 "DR": int(dr_val) if dr_val is not None else None,
                 "Органічний трафік": int(tr_val) if tr_val is not None else None,
