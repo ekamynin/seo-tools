@@ -8,6 +8,7 @@ import streamlit as st
 st.set_page_config(page_title="Link Builder", page_icon="🔗", layout="wide")
 
 from collaborator_api import fetch_all_sites, parse_site
+from cache import fetch_full_catalog
 from ahrefs_api import enrich_with_ahrefs
 from link_builder import (
     CATEGORY_TRANSLATIONS,
@@ -467,7 +468,7 @@ with tab2:
             if "df_all_sites" not in st.session_state:
                 with st.spinner("Завантажуємо повну базу майданчиків…"):
                     try:
-                        st.session_state["df_all_sites"] = fetch_sites_all_cached(COLLAB_KEY)
+                        st.session_state["df_all_sites"] = fetch_full_catalog(COLLAB_KEY)
                     except Exception as e:
                         st.error(f"❌ Помилка завантаження даних: {e}")
                         st.stop()

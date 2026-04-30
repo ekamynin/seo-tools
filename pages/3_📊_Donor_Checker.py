@@ -5,8 +5,8 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from collaborator_api import fetch_all_sites, parse_site
 from ahrefs_api import enrich_with_ahrefs
+from cache import fetch_full_catalog
 from link_builder import CATEGORY_TRANSLATIONS
 
 st.set_page_config(
@@ -19,15 +19,7 @@ COLLAB_KEY = st.secrets.get("COLLABORATOR_API_KEY", "")
 AHREFS_KEY  = st.secrets.get("AHREFS_API_KEY", "")
 
 
-@st.cache_data(ttl=21600, show_spinner=False)
-def _fetch_catalog(api_key: str) -> pd.DataFrame:
-    """Load full Collaborator catalog with no metric filters. Cached 6h."""
-    items, _ = fetch_all_sites(api_key, dr_min=0, traffic_min=0, da_min=0)
-    return pd.DataFrame([parse_site(i) for i in items])
-
-
 def _normalize(raw: str) -> str:
-    """Strip protocol, www, paths — return bare domain."""
     d = raw.strip().lower()
     d = re.sub(r'^[\s"\'«»„""\(\[\{]+', "", d)
     d = re.sub(r'[\s"\'«»„""\)\]\}]+$', "", d)
@@ -38,7 +30,6 @@ def _normalize(raw: str) -> str:
 
 
 def _translate_categories(raw: str) -> str:
-    """Translate comma-separated Collaborator categories to Ukrainian."""
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     seen, result = set(), []
     for p in parts:
@@ -50,7 +41,6 @@ def _translate_categories(raw: str) -> str:
 
 
 def _parse_input(text: str) -> list[str]:
-    """Split textarea by newlines/commas, normalize, deduplicate."""
     seen, result = set(), []
     for raw in re.split(r"[\n,]+", text):
         d = _normalize(raw)
@@ -64,19 +54,46 @@ def _parse_input(text: str) -> list[str]:
 with st.sidebar:
     st.markdown("## Налаштування")
     st.divider()
+    if "catalog_loaded_at" in st.session_state:
+        st.success(f"✅ {st.session_state['catalog_size']:,} майданчиків")
+        st.caption(f"Оновлено: {st.session_state['catalog_loaded_at']}")
     if st.button("Оновити каталог", use_container_width=True,
                  help="Примусово оновити каталог Collaborator (~1 хв)"):
         st.cache_data.clear()
-        st.success("Кеш очищено")
+        for key in ("catalog_loaded_at", "catalog_size"):
+            st.session_state.pop(key, None)
+        st.rerun()
     st.divider()
     st.caption("Donor Checker v1.0")
 
 
+# ── Auto-load catalog ─────────────────────────────────────────────────────────
+if not COLLAB_KEY:
+    st.error("Не знайдено COLLABORATOR_API_KEY у секретах.")
+    st.stop()
+
+if "catalog_loaded_at" not in st.session_state:
+    with st.spinner("Завантажуємо каталог майданчиків..."):
+        try:
+            df_catalog = fetch_full_catalog(COLLAB_KEY)
+            st.session_state["catalog_loaded_at"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+            st.session_state["catalog_size"] = len(df_catalog)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Помилка завантаження Collaborator: {e}")
+            st.stop()
+else:
+    df_catalog = fetch_full_catalog(COLLAB_KEY)
+
+collab_lookup: dict = {
+    _normalize(row["domain"]): row
+    for _, row in df_catalog.iterrows()
+}
+
+
 # ── Main UI ───────────────────────────────────────────────────────────────────
 st.title("Перевірка майданчиків")
-st.caption(
-    "Закидай список URL — отримаєш ціну з Collaborator, DR і трафік з Ahrefs для кожного донора."
-)
+st.caption("Закидай список URL — отримаєш ціну з Collaborator, DR і трафік з Ahrefs для кожного донора.")
 
 urls_input = st.text_area(
     "Список URL або доменів (по одному на рядок або через кому)",
@@ -91,27 +108,10 @@ if run_btn:
         st.warning("Введи хоча б один URL або домен.")
         st.stop()
 
-    if not COLLAB_KEY:
-        st.error("Не знайдено COLLABORATOR_API_KEY у секретах.")
-        st.stop()
-
     domains = _parse_input(urls_input)
     if not domains:
         st.warning("Не вдалось розпізнати жодного домену. Перевір введені дані.")
         st.stop()
-
-    # ── Load Collaborator catalog ──────────────────────────────────────────
-    with st.spinner("Завантажуємо каталог Collaborator..."):
-        try:
-            df_catalog = _fetch_catalog(COLLAB_KEY)
-        except Exception as e:
-            st.error(f"Помилка завантаження Collaborator: {e}")
-            st.stop()
-
-    collab_lookup: dict = {
-        _normalize(row["domain"]): row
-        for _, row in df_catalog.iterrows()
-    }
 
     matched   = [d for d in domains if d in collab_lookup]
     not_found = [d for d in domains if d not in collab_lookup]
@@ -140,7 +140,6 @@ if run_btn:
             )
             price   = site.get("price")
             price_w = site.get("price_writing")
-            traffic_label = ah.get("traffic_label") or "OK"
             rows.append({
                 "Домен": d,
                 "В Collaborator": "Так",
@@ -149,13 +148,12 @@ if run_btn:
                 "Тематика": _translate_categories(site.get("categories", "")),
                 "DR": int(dr_val) if dr_val is not None else None,
                 "Органічний трафік": int(tr_val) if tr_val is not None else None,
-                "Стан трафіку": traffic_label,
+                "Стан трафіку": ah.get("traffic_label") or "OK",
                 "Collaborator": site.get("collaborator_url", ""),
             })
         else:
             dr_val = ah.get("dr")
             tr_val = ah.get("org_traffic")
-            traffic_label = ah.get("traffic_label") or ("OK" if ah else "—")
             rows.append({
                 "Домен": d,
                 "В Collaborator": "Ні",
@@ -164,7 +162,7 @@ if run_btn:
                 "Тематика": "",
                 "DR": int(dr_val) if dr_val is not None else None,
                 "Органічний трафік": int(tr_val) if tr_val is not None else None,
-                "Стан трафіку": traffic_label,
+                "Стан трафіку": ah.get("traffic_label") or ("OK" if ah else "—"),
                 "Collaborator": "",
             })
 
