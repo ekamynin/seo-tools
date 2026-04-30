@@ -10,7 +10,7 @@ st.title("🛠️ SEO Tools")
 st.caption("Внутрішні інструменти для SEO-команди")
 st.divider()
 
-col1, col2 = st.columns(2, gap="large")
+col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
     st.markdown("### 🔗 Link Builder")
@@ -29,3 +29,12 @@ with col2:
         "Підтримує до 500 URL за запуск, експорт в Excel."
     )
     st.page_link("pages/2_🔍_Index_Checker.py", label="Відкрити Index Checker", icon="🔍")
+
+with col3:
+    st.markdown("### 📊 Donor Checker")
+    st.markdown(
+        "Масова перевірка списку донорів. "
+        "Ціна публікації та написання з Collaborator.pro. "
+        "DR і органічний трафік через Ahrefs."
+    )
+    st.page_link("pages/3_📊_Donor_Checker.py", label="Відкрити Donor Checker", icon="📊")

@@ -7,6 +7,7 @@ import streamlit as st
 
 from collaborator_api import fetch_all_sites, parse_site
 from ahrefs_api import enrich_with_ahrefs
+from link_builder import CATEGORY_TRANSLATIONS
 
 st.set_page_config(
     page_title="Перевірка майданчиків",
@@ -34,6 +35,18 @@ def _normalize(raw: str) -> str:
     d = re.sub(r"^www\.", "", d)
     d = d.split("/")[0].split("?")[0]
     return d
+
+
+def _translate_categories(raw: str) -> str:
+    """Translate comma-separated Collaborator categories to Ukrainian."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    seen, result = set(), []
+    for p in parts:
+        ua = CATEGORY_TRANSLATIONS.get(p, p)
+        if ua not in seen:
+            seen.add(ua)
+            result.append(ua)
+    return ", ".join(result)
 
 
 def _parse_input(text: str) -> list[str]:
@@ -133,7 +146,7 @@ if run_btn:
                 "В Collaborator": "Так",
                 "Ціна публікації (грн)": int(price)   if price   and pd.notna(price)   else None,
                 "Ціна написання (грн)":  int(price_w) if price_w and pd.notna(price_w) else None,
-                "Тематика": site.get("categories", ""),
+                "Тематика": _translate_categories(site.get("categories", "")),
                 "DR": int(dr_val) if dr_val is not None else None,
                 "Органічний трафік": int(tr_val) if tr_val is not None else None,
                 "Стан трафіку": traffic_label,
