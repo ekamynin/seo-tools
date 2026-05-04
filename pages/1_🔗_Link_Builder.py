@@ -27,7 +27,7 @@ AHREFS_KEY  = st.secrets.get("AHREFS_API_KEY", "")
 
 
 # ── Cached API fetch ──────────────────────────────────────────────────────────
-@st.cache_data(ttl=21600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False, persist="disk")
 def fetch_sites_cached(api_key: str) -> pd.DataFrame:
     """Tab 1: pre-filtered dataset (DR≥20, traffic≥5000)."""
     items, _ = fetch_all_sites(api_key, dr_min=20, traffic_min=5000, da_min=10)
