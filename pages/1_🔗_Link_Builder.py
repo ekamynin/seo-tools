@@ -34,12 +34,6 @@ def fetch_sites_cached(api_key: str) -> pd.DataFrame:
     return pd.DataFrame([parse_site(i) for i in items])
 
 
-@st.cache_data(ttl=21600, show_spinner=False)
-def fetch_sites_all_cached(api_key: str) -> pd.DataFrame:
-    """Tab 2: all available sites, no pre-filtering."""
-    items, _ = fetch_all_sites(api_key, dr_min=0, traffic_min=0, da_min=0)
-    return pd.DataFrame([parse_site(i) for i in items])
-
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -48,13 +42,15 @@ with st.sidebar:
 
     if "df_loaded" in st.session_state:
         loaded_at = st.session_state.get("loaded_at", "")
-        st.success(f"✅ {len(st.session_state['df_loaded']):,} майданчиків")
+        full_count = len(st.session_state["df_all_sites"]) if "df_all_sites" in st.session_state else len(st.session_state["df_loaded"])
+        st.success(f"✅ {full_count:,} майданчиків")
         if loaded_at:
             st.caption(f"Оновлено: {loaded_at}")
         if st.button("🔄 Оновити дані", use_container_width=True,
                      help="⚠️ Скине кеш і завантажить свіжі дані з Collaborator. Займе до хвилини."):
             st.cache_data.clear()
-            del st.session_state["df_loaded"]
+            for key in ("df_loaded", "df_all_sites", "loaded_at"):
+                st.session_state.pop(key, None)
             st.rerun()
 
     st.divider()
@@ -427,14 +423,18 @@ with tab1:
             df_niche = filter_by_categories(df_all, selected_cats)
             df_filtered = apply_hard_filters(df_niche, criteria)
             cats_label = ", ".join(selected_cats)
-            st.caption(f"«{cats_label}»: {len(df_niche)} сайтів → після фільтрів: {len(df_filtered)}")
+            short_label = (
+                f"{', '.join(selected_cats[:3])} та ще {len(selected_cats) - 3}"
+                if len(selected_cats) > 3 else cats_label
+            )
+            st.caption(f"Обрано {len(selected_cats)} категорій: {len(df_niche)} сайтів → після фільтрів: {len(df_filtered)}")
 
             if df_filtered.empty:
                 st.warning("⚠️ Жоден майданчик не пройшов фільтри. Спробуй знизити мінімальні пороги.")
             else:
                 df_scored = score_sites(df_filtered)
                 df_result = select_donors(df_scored, quantity_t1, budget_t1)
-                render_results(df_result, df_scored, budget_t1, my_site_t1 or cats_label, quantity_t1,
+                render_results(df_result, df_scored, budget_t1, my_site_t1 or short_label, quantity_t1,
                                exclude_spike=exclude_spike_t1, exclude_penalty=exclude_penalty_t1)
 
 
@@ -487,7 +487,7 @@ with tab2:
         )
 
     if st.button("🔍 Підібрати донорів", key="run_t2", type="primary",
-                 use_container_width=True, disabled=df_all.empty):
+                 use_container_width=True, disabled="df_all_sites" not in st.session_state):
         if budget_t2 <= 0:
             st.warning("⚠️ Вкажи бюджет більше 0.")
         elif quantity_t2 <= 0:

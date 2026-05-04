@@ -60,8 +60,8 @@ REVERSE_CATEGORY_MAP = _build_reverse_map()
 
 def _split_categories(raw: str) -> list[str]:
     """Split categories string, handling parentheses with commas inside."""
-    # Replace commas inside parentheses temporarily
-    clean = re.sub(r"\(([^)]*),([^)]*)\)", lambda m: f"({m.group(1)}COMMA{m.group(2)})", raw)
+    # Replace ALL commas inside parentheses (handles multiple commas per group)
+    clean = re.sub(r"\([^)]*\)", lambda m: m.group(0).replace(",", "COMMA"), raw)
     parts = [p.strip().replace("COMMA", ",") for p in clean.split(",")]
     return [p for p in parts if p]
 
@@ -143,14 +143,17 @@ def apply_hard_filters(df: pd.DataFrame, criteria: dict, strict: bool = True) ->
 
 
 def score_sites(df: pd.DataFrame) -> pd.DataFrame:
-    """Add quality score (DR + traffic only, no price). Higher = better quality."""
+    """Add quality score (DR + traffic only, no price). Higher = better quality.
+    Traffic is capped at 95th percentile to prevent one outlier site from
+    collapsing all others to near-zero scores.
+    """
     df = df.copy()
     dr_max = df["dr"].max() or 1
-    traffic_max = df["organic_traffic"].max() or 1
+    traffic_cap = df["organic_traffic"].quantile(0.95) or 1
 
     df["score"] = (
         (df["dr"] / dr_max) * 0.50
-        + (df["organic_traffic"] / traffic_max) * 0.50
+        + (df["organic_traffic"].clip(upper=traffic_cap) / traffic_cap) * 0.50
     )
     return df
 
@@ -158,18 +161,22 @@ def score_sites(df: pd.DataFrame) -> pd.DataFrame:
 def select_donors(df: pd.DataFrame, quantity: int, budget: float) -> pd.DataFrame:
     """Select up to `quantity` donors within budget.
     - Pass 1: quality-first (highest DR + traffic), with ±15% random noise for variety.
+      Lookahead: skips a site if picking it would leave insufficient budget for
+      remaining slots (prevents one expensive site from blocking all others).
     - Pass 2: if count still short, fill remaining slots with cheapest available sites.
     """
     df = df[df["price"].notna()].copy()
     if df.empty:
         return pd.DataFrame()
 
+    min_price = df["price"].min()
+
     # ±15% random noise → variety between runs
     df["score_r"] = df["score"] * pd.Series(
         [1 + random.uniform(-0.15, 0.15) for _ in range(len(df))], index=df.index
     )
 
-    # Pass 1: quality-first
+    # Pass 1: quality-first with budget lookahead
     df_quality = df.sort_values("score_r", ascending=False).reset_index(drop=True)
     selected: list = []
     selected_domains: set = set()
@@ -178,10 +185,16 @@ def select_donors(df: pd.DataFrame, quantity: int, budget: float) -> pd.DataFram
     for _, row in df_quality.iterrows():
         if len(selected) >= quantity:
             break
-        if spent + row["price"] <= budget:
-            selected.append(row)
-            selected_domains.add(row["domain"])
-            spent += row["price"]
+        if spent + row["price"] > budget:
+            continue
+        # Lookahead: after picking this site, can remaining slots still be filled?
+        remaining_slots = quantity - len(selected) - 1
+        budget_after = budget - spent - row["price"]
+        if remaining_slots > 0 and budget_after < min_price * remaining_slots:
+            continue
+        selected.append(row)
+        selected_domains.add(row["domain"])
+        spent += row["price"]
 
     # Pass 2: fill remaining slots with cheapest unselected sites
     if len(selected) < quantity:
@@ -194,15 +207,7 @@ def select_donors(df: pd.DataFrame, quantity: int, budget: float) -> pd.DataFram
                 selected_domains.add(row["domain"])
                 spent += row["price"]
 
-    # Rebuild with cumulative price
-    result, cumulative = [], 0.0
-    for row in selected:
-        cumulative += row["price"]
-        r = row.copy()
-        r["cumulative_price"] = round(cumulative, 2)
-        result.append(r)
-
-    return pd.DataFrame(result) if result else pd.DataFrame()
+    return pd.DataFrame(selected) if selected else pd.DataFrame()
 
 
 def build_why_suitable(row: pd.Series) -> str:
