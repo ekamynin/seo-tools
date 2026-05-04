@@ -156,49 +156,43 @@ def score_sites(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def select_donors(df: pd.DataFrame, quantity: int, budget: float) -> pd.DataFrame:
-    """Select exactly `quantity` donors within budget.
-    - Random noise on scores → different results on each click.
-    - Quality-first greedy pick.
-    - If quantity not met: drop most expensive, retry with cheaper alternatives.
+    """Select up to `quantity` donors within budget.
+    - Pass 1: quality-first (highest DR + traffic), with ±15% random noise for variety.
+    - Pass 2: if count still short, fill remaining slots with cheapest available sites.
     """
     df = df[df["price"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
 
     # ±15% random noise → variety between runs
-    df["score_r"] = df["score"].apply(lambda s: s * (1 + random.uniform(-0.15, 0.15)))
-    df = df.sort_values("score_r", ascending=False).reset_index(drop=True)
+    df["score_r"] = df["score"] * pd.Series(
+        [1 + random.uniform(-0.15, 0.15) for _ in range(len(df))], index=df.index
+    )
 
-    def _greedy(pool, qty, bdg, excluded):
-        sel, spent = [], 0.0
-        for _, row in pool.iterrows():
-            if len(sel) >= qty:
-                break
-            if row["domain"] in excluded:
-                continue
-            if spent + row["price"] <= bdg:
-                sel.append(row)
-                spent += row["price"]
-                excluded.add(row["domain"])
-        return sel
+    # Pass 1: quality-first
+    df_quality = df.sort_values("score_r", ascending=False).reset_index(drop=True)
+    selected: list = []
+    selected_domains: set = set()
+    spent = 0.0
 
-    excluded = set()
-    selected = _greedy(df, quantity, budget, excluded)
-
-    # Iteratively drop most expensive and re-fill until quantity met
-    for _ in range(quantity * 3):
+    for _, row in df_quality.iterrows():
         if len(selected) >= quantity:
             break
-        if not selected:
-            break
+        if spent + row["price"] <= budget:
+            selected.append(row)
+            selected_domains.add(row["domain"])
+            spent += row["price"]
 
-        most_exp = max(selected, key=lambda r: r["price"])
-        selected = [r for r in selected if r["domain"] != most_exp["domain"]]
-        excluded.add(most_exp["domain"])
-
-        spent = sum(r["price"] for r in selected)
-        used = {r["domain"] for r in selected} | excluded
-        pool = df[~df["domain"].isin(used)].reset_index(drop=True)
-        extra = _greedy(pool, quantity - len(selected), budget - spent, used)
-        selected.extend(extra)
+    # Pass 2: fill remaining slots with cheapest unselected sites
+    if len(selected) < quantity:
+        df_cheap = df[~df["domain"].isin(selected_domains)].sort_values("price", ascending=True)
+        for _, row in df_cheap.iterrows():
+            if len(selected) >= quantity:
+                break
+            if spent + row["price"] <= budget:
+                selected.append(row)
+                selected_domains.add(row["domain"])
+                spent += row["price"]
 
     # Rebuild with cumulative price
     result, cumulative = [], 0.0

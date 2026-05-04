@@ -176,19 +176,48 @@ def render_results(df_result: pd.DataFrame, df_pool: pd.DataFrame,
 
     # Filter out suspicious sites if requested
     if AHREFS_KEY and (exclude_spike or exclude_penalty):
-        excluded_domains = []
+        bad_domains: set = set()
         keep_rows = []
         for _, row in df_result.iterrows():
             status = ahrefs_data.get(row["domain"], {}).get("traffic_status", "ok")
             if (status == "spike" and exclude_spike) or (status == "penalty" and exclude_penalty):
-                excluded_domains.append(row["domain"])
+                bad_domains.add(row["domain"])
             else:
                 keep_rows.append(row)
-        if excluded_domains:
-            labels = [ahrefs_data[d]["traffic_label"] for d in excluded_domains]
-            details = ", ".join(f"**{d}** ({l})" for d, l in zip(excluded_domains, labels))
-            st.warning(f"🚫 Виключено {len(excluded_domains)} майданчиків за підозрілим трафіком: {details}")
+        if bad_domains:
+            details = ", ".join(
+                f"**{d}** ({ahrefs_data[d]['traffic_label']})" for d in bad_domains if d in ahrefs_data
+            )
+            st.warning(f"🚫 Виключено {len(bad_domains)} майданчиків за підозрілим трафіком: {details}")
             df_result = pd.DataFrame(keep_rows).reset_index(drop=True)
+
+            # Refill removed slots from pool
+            if quantity > 0 and len(df_result) < quantity:
+                used_domains = set(df_result["domain"].tolist()) | bad_domains
+                spent_so_far = df_result["price"].sum() if not df_result.empty else 0.0
+                sort_col = "score" if "score" in df_pool.columns else "price"
+                candidates = (
+                    df_pool[
+                        ~df_pool["domain"].isin(used_domains)
+                        & df_pool["price"].notna()
+                    ]
+                    .sort_values(sort_col, ascending=(sort_col == "price"))
+                )
+                extra_rows = []
+                for _, row in candidates.iterrows():
+                    if len(df_result) + len(extra_rows) >= quantity:
+                        break
+                    status = ahrefs_data.get(row["domain"], {}).get("traffic_status", "ok")
+                    if (status == "spike" and exclude_spike) or (status == "penalty" and exclude_penalty):
+                        continue
+                    if spent_so_far + row["price"] <= budget:
+                        extra_rows.append(row)
+                        spent_so_far += row["price"]
+                if extra_rows:
+                    df_result = pd.concat(
+                        [df_result, pd.DataFrame(extra_rows)], ignore_index=True
+                    )
+
         if df_result.empty:
             st.warning("⚠️ Всі підібрані майданчики виявились підозрілими. Спробуй змінити критерії.")
             return
