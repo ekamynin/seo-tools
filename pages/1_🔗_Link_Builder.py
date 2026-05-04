@@ -62,15 +62,19 @@ with st.sidebar:
 
 
 # ── Auto-load data ────────────────────────────────────────────────────────────
-if "df_loaded" not in st.session_state:
+_needs_load = "df_loaded" not in st.session_state or "df_all_sites" not in st.session_state
+if _needs_load:
     if not COLLAB_KEY:
         st.error("❌ Не знайдено COLLABORATOR_API_KEY у секретах. Додай його в Settings → Secrets.")
         st.stop()
     with st.spinner("Зачекайте, будь ласка, завантажуємо майданчики з Collaborator…"):
         try:
-            df = fetch_sites_cached(COLLAB_KEY)
-            st.session_state["df_loaded"] = df
-            st.session_state["loaded_at"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+            if "df_loaded" not in st.session_state:
+                df = fetch_sites_cached(COLLAB_KEY)
+                st.session_state["df_loaded"] = df
+                st.session_state["loaded_at"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+            if "df_all_sites" not in st.session_state:
+                st.session_state["df_all_sites"] = fetch_full_catalog(COLLAB_KEY)
             st.rerun()
         except Exception as e:
             st.error(f"❌ Помилка завантаження даних: {e}")
@@ -493,14 +497,6 @@ with tab2:
         elif traffic_min_t2 > 0 and total_traffic_min_t2 > 0 and traffic_min_t2 > total_traffic_min_t2:
             st.warning("⚠️ Органічний трафік не може перевищувати загальний. Виправ значення.")
         else:
-            # Lazy-load unrestricted dataset on first use
-            if "df_all_sites" not in st.session_state:
-                with st.spinner("Завантажуємо повну базу майданчиків…"):
-                    try:
-                        st.session_state["df_all_sites"] = fetch_full_catalog(COLLAB_KEY)
-                    except Exception as e:
-                        st.error(f"❌ Помилка завантаження даних: {e}")
-                        st.stop()
             df_all_unrestricted = st.session_state["df_all_sites"]
 
             excluded_list_t2, invalid_t2 = parse_excluded(excluded_t2)
