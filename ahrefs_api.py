@@ -116,7 +116,7 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
     while len(all_items) < limit:
         fetch_count = min(page_size, limit - len(all_items))
         resp = requests.get(
-            f"{AHREFS_BASE}/referring-domains",
+            f"{AHREFS_BASE}/refdomains",
             headers=headers,
             params={
                 "target": target,
