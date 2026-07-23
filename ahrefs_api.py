@@ -115,32 +115,28 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
 
     while len(all_items) < limit:
         fetch_count = min(page_size, limit - len(all_items))
-        try:
-            resp = requests.get(
-                f"{AHREFS_BASE}/referring-domains",
-                headers=headers,
-                params={
-                    "target": target,
-                    "mode": "subdomains",
-                    "date": today,
-                    "select": "domain,domain_rating,traffic_domain,dofollow_links",
-                    "limit": fetch_count,
-                    "offset": offset,
-                    "order_by": "domain_rating:desc",
-                },
-                timeout=30,
-            )
-            if not resp.ok:
-                resp.raise_for_status()
-            data = resp.json()
-            items = data.get("refdomains", [])
-            if not items:
-                break
-            all_items.extend(items)
-            offset += len(items)
-            if len(items) < fetch_count:
-                break
-        except Exception:
+        resp = requests.get(
+            f"{AHREFS_BASE}/referring-domains",
+            headers=headers,
+            params={
+                "target": target,
+                "mode": "subdomains",
+                "date": today,
+                "select": "domain,domain_rating,traffic_domain,dofollow_links",
+                "limit": fetch_count,
+                "offset": offset,
+                "order_by": "domain_rating:desc",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("refdomains", [])
+        if not items:
+            break
+        all_items.extend(items)
+        offset += len(items)
+        if len(items) < fetch_count:
             break
 
     return all_items
