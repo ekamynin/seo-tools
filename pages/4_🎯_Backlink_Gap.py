@@ -318,20 +318,24 @@ if run:
             )
 
     # ── Excel export ──────────────────────────────────────────────────────
-    st.divider()
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        if not df_gap.empty:
-            df_gap.to_excel(writer, index=False, sheet_name="Gap (нові донори)")
-        if not df_my.empty:
-            df_my.to_excel(writer, index=False, sheet_name="Мої донори")
-        if not df_shared.empty:
-            df_shared.to_excel(writer, index=False, sheet_name="Спільні")
-    buf.seek(0)
-    st.download_button(
-        "📥 Завантажити Excel (всі листи)",
-        data=buf,
-        file_name=f"competitor_backlinks_{my_domain}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+    sheets = {
+        "Gap (нові донори)": df_gap,
+        "Мої донори": df_my,
+        "Спільні": df_shared,
+    }
+    non_empty = {name: df for name, df in sheets.items() if not df.empty}
+
+    if non_empty:
+        st.divider()
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            for sheet_name, df in non_empty.items():
+                df.to_excel(writer, index=False, sheet_name=sheet_name)
+        buf.seek(0)
+        st.download_button(
+            "📥 Завантажити Excel (всі листи)",
+            data=buf,
+            file_name=f"backlink_gap_{my_domain}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
