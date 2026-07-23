@@ -69,10 +69,10 @@ with col3:
     st.page_link("pages/3_📊_Donor_Checker.py", label="Відкрити Donor Checker", icon="📊")
 
 with col4:
-    st.markdown("### 🎯 Competitor Backlinks")
+    st.markdown("### 🎯 Backlink Gap")
     st.markdown(
         "Порівняння донорського профілю твого сайту та конкурентів. "
         "Знаходить майданчики, яких у тебе ще немає. "
         "DR, трафік і ціни з Collaborator."
     )
-    st.page_link("pages/4_🎯_Competitor_Backlinks.py", label="Відкрити Competitor Backlinks", icon="🎯")
+    st.page_link("pages/4_🎯_Backlink_Gap.py", label="Відкрити Backlink Gap", icon="🎯")

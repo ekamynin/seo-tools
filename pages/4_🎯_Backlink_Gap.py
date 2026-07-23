@@ -10,7 +10,7 @@ from ahrefs_api import fetch_referring_domains
 from cache import fetch_full_catalog
 
 st.set_page_config(
-    page_title="Competitor Backlinks",
+    page_title="Backlink Gap",
     page_icon="🎯",
     layout="wide",
 )
@@ -67,7 +67,7 @@ with st.sidebar:
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
-st.title("🎯 Competitor Backlinks")
+st.title("🎯 Backlink Gap")
 st.caption("Пошук донорів, які лінкують на конкурентів, але ще не на тебе.")
 
 if not AHREFS_KEY:
