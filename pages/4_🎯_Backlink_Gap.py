@@ -143,6 +143,11 @@ if run:
     for err in fetch_errors:
         st.warning(f"⚠️ Помилка при завантаженні {err}")
 
+    # DEBUG — видалити після перевірки
+    with st.expander("🛠 Debug: к-сть донорів по сайтах"):
+        for t, donors in donors_by_site.items():
+            st.write(f"`{t}`: {len(donors)} донорів")
+
     my_donors = donors_by_site.get(my_domain, {})
 
     # ── Apply filters ─────────────────────────────────────────────────────
