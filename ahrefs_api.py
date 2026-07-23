@@ -123,7 +123,7 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
                     "target": target,
                     "mode": "domain",
                     "date": today,
-                    "select": "domain,domain_rating,org_traffic",
+                    "select": "domain,domain_rating,traffic_domain",
                     "limit": fetch_count,
                     "offset": offset,
                     "order_by": "domain_rating:desc",

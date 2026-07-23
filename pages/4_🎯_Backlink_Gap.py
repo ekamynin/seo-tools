@@ -39,7 +39,7 @@ def _fetch_site_donors(api_key: str, domain: str, limit: int) -> dict[str, dict]
         if d:
             result[d] = {
                 "dr": item.get("domain_rating"),
-                "traffic": item.get("org_traffic"),
+                "traffic": item.get("traffic_domain"),
                 "raw_domain": item.get("domain", d),
             }
     return result
