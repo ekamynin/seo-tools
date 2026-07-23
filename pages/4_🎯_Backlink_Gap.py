@@ -5,6 +5,8 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 from ahrefs_api import fetch_referring_domains
 from cache import fetch_full_catalog
@@ -28,11 +30,8 @@ def _norm(raw: str) -> str:
 
 
 def _fetch_site_donors(api_key: str, domain: str, limit: int) -> dict[str, dict]:
-    """Fetch referring domains. Returns {norm_domain: {dr, traffic, raw_domain}}."""
-    try:
-        items = fetch_referring_domains(api_key, domain, limit=limit)
-    except Exception:
-        return {}
+    """Fetch referring domains. Returns {norm_domain: {dr, traffic, dofollow, raw_domain}}."""
+    items = fetch_referring_domains(api_key, domain, limit=limit)
     result = {}
     for item in items:
         d = _norm(item.get("domain", ""))
@@ -40,6 +39,7 @@ def _fetch_site_donors(api_key: str, domain: str, limit: int) -> dict[str, dict]
             result[d] = {
                 "dr": item.get("domain_rating"),
                 "traffic": item.get("traffic_domain"),
+                "dofollow": (item.get("dofollow_links") or 0) > 0,
                 "raw_domain": item.get("domain", d),
             }
     return result
@@ -62,8 +62,20 @@ with st.sidebar:
         value=0,
         help="Показувати тільки донорів з DR ≥ цього значення.",
     )
+    min_traffic = st.number_input(
+        "Мінімальний трафік донора",
+        min_value=0,
+        value=0,
+        step=1000,
+        help="Показувати тільки донорів з органічним трафіком ≥ цього значення.",
+    )
+    collab_only = st.toggle(
+        "Тільки з Collaborator",
+        value=False,
+        help="Показати в Gap тільки донорів, що є в каталозі Collaborator.",
+    )
     st.divider()
-    st.caption("Competitor Backlinks v1.0")
+    st.caption("Backlink Gap v1.1")
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
@@ -133,14 +145,20 @@ if run:
 
     my_donors = donors_by_site.get(my_domain, {})
 
-    # ── Apply min DR filter ───────────────────────────────────────────────
-    if min_dr > 0:
-        my_donors = {d: v for d, v in my_donors.items() if (v.get("dr") or 0) >= min_dr}
-        for cd in comp_domains:
-            donors_by_site[cd] = {
-                d: v for d, v in donors_by_site.get(cd, {}).items()
-                if (v.get("dr") or 0) >= min_dr
-            }
+    # ── Apply filters ─────────────────────────────────────────────────────
+    def _passes_filters(v: dict) -> bool:
+        if min_dr > 0 and (v.get("dr") or 0) < min_dr:
+            return False
+        if min_traffic > 0 and (v.get("traffic") or 0) < min_traffic:
+            return False
+        return True
+
+    my_donors = {d: v for d, v in my_donors.items() if _passes_filters(v)}
+    for cd in comp_domains:
+        donors_by_site[cd] = {
+            d: v for d, v in donors_by_site.get(cd, {}).items()
+            if _passes_filters(v)
+        }
 
     # Build combined competitor donor pool (highest DR wins for duplicates)
     all_comp_donors: dict[str, dict] = {}
@@ -153,7 +171,6 @@ if run:
     my_set = set(my_donors.keys())
     comp_set = set(all_comp_donors.keys())
     gap_set = comp_set - my_set
-    my_only_set = my_set - comp_set
     shared_set = my_set & comp_set
 
     # ── Collaborator enrichment ───────────────────────────────────────────
@@ -171,8 +188,8 @@ if run:
                 st.warning(f"⚠️ Помилка завантаження Collaborator: {e}")
 
     def _collab(domain: str) -> tuple:
-        info = collab_lookup.get(domain, {})
-        if not info:
+        info = collab_lookup.get(domain)
+        if info is None:
             return False, None, None, ""
         price = int(info["price"]) if info.get("price") else None
         price_w = int(info["price_writing"]) if info.get("price_writing") else None
@@ -184,7 +201,7 @@ if run:
     def _comp_count(domain: str) -> int:
         return sum(1 for cd in comp_domains if domain in donors_by_site.get(cd, {}))
 
-    # ── Gap DataFrame (екран) ─────────────────────────────────────────────
+    # ── Gap DataFrame ─────────────────────────────────────────────────────
     gap_rows = []
     for d in gap_set:
         info = all_comp_donors.get(d, {})
@@ -192,7 +209,8 @@ if run:
         gap_rows.append({
             "Домен": info.get("raw_domain", d),
             "DR": info.get("dr"),
-            "Органічний трафік": info.get("traffic"),
+            "Трафік": info.get("traffic"),
+            "Dofollow": "✅" if info.get("dofollow") else "—",
             "К-сть конкурентів": _comp_count(d),
             "Конкуренти": _which_comps(d),
             "В Collaborator": "Так" if in_c else "Ні",
@@ -206,6 +224,9 @@ if run:
             ["К-сть конкурентів", "DR"], ascending=[False, False]
         ).reset_index(drop=True)
 
+    if collab_only and not df_gap.empty:
+        df_gap = df_gap[df_gap["В Collaborator"] == "Так"].reset_index(drop=True)
+
     # ── Helper: повний список донорів для одного сайту (для Excel) ────────
     def _site_df(donors: dict) -> pd.DataFrame:
         rows = []
@@ -214,7 +235,8 @@ if run:
             rows.append({
                 "Домен": info.get("raw_domain", d),
                 "DR": info.get("dr"),
-                "Органічний трафік": info.get("traffic"),
+                "Трафік": info.get("traffic"),
+                "Dofollow": "✅" if info.get("dofollow") else "—",
                 "В Collaborator": "Так" if in_c else "Ні",
                 "Ціна публікації (грн)": price,
                 "Ціна написання (грн)": price_w,
@@ -228,15 +250,16 @@ if run:
     # ── Summary metrics ───────────────────────────────────────────────────
     st.divider()
     in_collab_count = int(df_gap["В Collaborator"].eq("Так").sum()) if not df_gap.empty else 0
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 Gap донорів", len(gap_set))
     c2.metric("📋 З них в Collaborator", in_collab_count)
-    c3.metric("🔗 Моїх донорів", len(my_set))
+    c3.metric("🤝 Спільних донорів", len(shared_set))
+    c4.metric("🔗 Моїх донорів", len(my_set))
 
     # ── Gap таблиця на екрані ─────────────────────────────────────────────
     COL_CFG = {
         "DR": st.column_config.NumberColumn(format="%d"),
-        "Органічний трафік": st.column_config.NumberColumn(format="%d"),
+        "Трафік": st.column_config.NumberColumn(format="%d"),
         "Ціна публікації (грн)": st.column_config.NumberColumn(format="%d"),
         "Ціна написання (грн)": st.column_config.NumberColumn(format="%d"),
         "Collaborator": st.column_config.LinkColumn(
@@ -251,11 +274,18 @@ if run:
         st.info("ℹ️ Gap-донорів не знайдено.")
     else:
         gap_cols = [
-            "Домен", "DR", "Органічний трафік", "К-сть конкурентів", "Конкуренти",
+            "Домен", "DR", "Трафік", "Dofollow", "К-сть конкурентів", "Конкуренти",
             "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
         ]
+        display_df = df_gap[[c for c in gap_cols if c in df_gap.columns]]
+
+        def _style_collab(df):
+            styles = pd.DataFrame("", index=df.index, columns=df.columns)
+            styles.loc[df["В Collaborator"] == "Так"] = "background-color: #1a3a20"
+            return styles
+
         st.dataframe(
-            df_gap[[c for c in gap_cols if c in df_gap.columns]],
+            display_df.style.apply(_style_collab, axis=None),
             use_container_width=True,
             hide_index=True,
             column_config=COL_CFG,
@@ -282,6 +312,19 @@ if run:
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             for sheet_name, df in excel_sheets.items():
                 df.to_excel(writer, index=False, sheet_name=sheet_name)
+            # Clickable hyperlinks in Collaborator column
+            wb = writer.book
+            for sheet_name, df in excel_sheets.items():
+                if "Collaborator" not in df.columns:
+                    continue
+                ws = wb[sheet_name]
+                col_letter = get_column_letter(list(df.columns).index("Collaborator") + 1)
+                for row_idx, url in enumerate(df["Collaborator"], start=2):
+                    if url:
+                        cell = ws[f"{col_letter}{row_idx}"]
+                        cell.value = "Відкрити"
+                        cell.hyperlink = url
+                        cell.font = Font(color="0563C1", underline="single")
         buf.seek(0)
         st.download_button(
             "📥 Завантажити Excel",

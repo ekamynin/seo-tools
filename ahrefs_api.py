@@ -121,9 +121,9 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
                 headers=headers,
                 params={
                     "target": target,
-                    "mode": "domain",
+                    "mode": "subdomains",
                     "date": today,
-                    "select": "domain,domain_rating,traffic_domain",
+                    "select": "domain,domain_rating,traffic_domain,dofollow_links",
                     "limit": fetch_count,
                     "offset": offset,
                     "order_by": "domain_rating:desc",
@@ -131,7 +131,7 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
                 timeout=30,
             )
             if not resp.ok:
-                break
+                resp.raise_for_status()
             data = resp.json()
             items = data.get("refdomains", [])
             if not items:
