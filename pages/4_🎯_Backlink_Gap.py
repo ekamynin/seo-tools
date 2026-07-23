@@ -184,13 +184,34 @@ if run:
     def _comp_count(domain: str) -> int:
         return sum(1 for cd in comp_domains if domain in donors_by_site.get(cd, {}))
 
-    # ── Build DataFrames ──────────────────────────────────────────────────
-    def _make_df(domain_set: set, donor_source: dict, with_comp_cols: bool = False) -> pd.DataFrame:
+    # ── Gap DataFrame (екран) ─────────────────────────────────────────────
+    gap_rows = []
+    for d in gap_set:
+        info = all_comp_donors.get(d, {})
+        in_c, price, price_w, c_url = _collab(d)
+        gap_rows.append({
+            "Домен": info.get("raw_domain", d),
+            "DR": info.get("dr"),
+            "Органічний трафік": info.get("traffic"),
+            "К-сть конкурентів": _comp_count(d),
+            "Конкуренти": _which_comps(d),
+            "В Collaborator": "Так" if in_c else "Ні",
+            "Ціна публікації (грн)": price,
+            "Ціна написання (грн)": price_w,
+            "Collaborator": c_url,
+        })
+    df_gap = pd.DataFrame(gap_rows)
+    if not df_gap.empty:
+        df_gap = df_gap.sort_values(
+            ["К-сть конкурентів", "DR"], ascending=[False, False]
+        ).reset_index(drop=True)
+
+    # ── Helper: повний список донорів для одного сайту (для Excel) ────────
+    def _site_df(donors: dict) -> pd.DataFrame:
         rows = []
-        for d in domain_set:
-            info = donor_source.get(d, {})
+        for d, info in donors.items():
             in_c, price, price_w, c_url = _collab(d)
-            row = {
+            rows.append({
                 "Домен": info.get("raw_domain", d),
                 "DR": info.get("dr"),
                 "Органічний трафік": info.get("traffic"),
@@ -198,59 +219,21 @@ if run:
                 "Ціна публікації (грн)": price,
                 "Ціна написання (грн)": price_w,
                 "Collaborator": c_url,
-            }
-            if with_comp_cols:
-                row["К-сть конкурентів"] = _comp_count(d)
-                row["Конкуренти"] = _which_comps(d)
-            rows.append(row)
-        if not rows:
-            return pd.DataFrame()
-        return pd.DataFrame(rows)
-
-    # Gap
-    df_gap = _make_df(gap_set, all_comp_donors, with_comp_cols=True)
-    if not df_gap.empty:
-        df_gap = df_gap.sort_values(
-            ["К-сть конкурентів", "DR"], ascending=[False, False]
-        ).reset_index(drop=True)
-
-    # My donors
-    my_rows = []
-    for d in my_set:
-        info = my_donors.get(d, {})
-        in_c, price, price_w, c_url = _collab(d)
-        in_shared = d in shared_set
-        my_rows.append({
-            "Домен": info.get("raw_domain", d),
-            "DR": info.get("dr"),
-            "Органічний трафік": info.get("traffic"),
-            "Є у конкурентів": "Так" if in_shared else "Ні",
-            "Конкуренти": _which_comps(d) if in_shared else "",
-            "В Collaborator": "Так" if in_c else "Ні",
-            "Ціна публікації (грн)": price,
-            "Ціна написання (грн)": price_w,
-            "Collaborator": c_url,
-        })
-    df_my = pd.DataFrame(my_rows)
-    if not df_my.empty:
-        df_my = df_my.sort_values("DR", ascending=False).reset_index(drop=True)
-
-    # Shared
-    df_shared = _make_df(shared_set, my_donors, with_comp_cols=True)
-    if not df_shared.empty:
-        df_shared = df_shared.sort_values(
-            ["К-сть конкурентів", "DR"], ascending=[False, False]
-        ).reset_index(drop=True)
+            })
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df = df.sort_values("DR", ascending=False).reset_index(drop=True)
+        return df
 
     # ── Summary metrics ───────────────────────────────────────────────────
     st.divider()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🔗 Мої донори", len(my_set))
-    c2.metric("🎯 Gap донори", len(gap_set))
-    c3.metric("🔄 Спільні", len(shared_set))
-    c4.metric("⭐ Тільки у мене", len(my_only_set))
+    in_collab_count = int(df_gap["В Collaborator"].eq("Так").sum()) if not df_gap.empty else 0
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🎯 Gap донорів", len(gap_set))
+    c2.metric("📋 З них в Collaborator", in_collab_count)
+    c3.metric("🔗 Моїх донорів", len(my_set))
 
-    # ── Column config ─────────────────────────────────────────────────────
+    # ── Gap таблиця на екрані ─────────────────────────────────────────────
     COL_CFG = {
         "DR": st.column_config.NumberColumn(format="%d"),
         "Органічний трафік": st.column_config.NumberColumn(format="%d"),
@@ -263,77 +246,45 @@ if run:
         ),
     }
 
-    tab_gap, tab_my, tab_shared = st.tabs([
-        f"🎯 Gap — {len(gap_set)}",
-        f"🔗 Мої донори — {len(my_set)}",
-        f"🔄 Спільні — {len(shared_set)}",
-    ])
+    st.caption("Донори конкурентів, яких у тебе ще немає. Відсортовано: к-сть конкурентів → DR.")
+    if df_gap.empty:
+        st.info("ℹ️ Gap-донорів не знайдено.")
+    else:
+        gap_cols = [
+            "Домен", "DR", "Органічний трафік", "К-сть конкурентів", "Конкуренти",
+            "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
+        ]
+        st.dataframe(
+            df_gap[[c for c in gap_cols if c in df_gap.columns]],
+            use_container_width=True,
+            hide_index=True,
+            column_config=COL_CFG,
+        )
 
-    with tab_gap:
-        st.caption("Сайти, що дають посилання конкурентам, але ще не тобі. Відсортовано: к-сть конкурентів → DR.")
-        if df_gap.empty:
-            st.info("ℹ️ Gap-донорів не знайдено.")
-        else:
-            gap_cols = [
-                "Домен", "DR", "Органічний трафік", "К-сть конкурентів", "Конкуренти",
-                "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
-            ]
-            st.dataframe(
-                df_gap[[c for c in gap_cols if c in df_gap.columns]],
-                use_container_width=True,
-                hide_index=True,
-                column_config=COL_CFG,
-            )
+    # ── Excel — повна вигрузка по кожному сайту ───────────────────────────
+    excel_sheets: dict[str, pd.DataFrame] = {}
 
-    with tab_my:
-        st.caption("Всі донори твого сайту. Позначено, чи є вони також у конкурентів.")
-        if df_my.empty:
-            st.info("ℹ️ Донорів не знайдено.")
-        else:
-            my_cols = [
-                "Домен", "DR", "Органічний трафік", "Є у конкурентів", "Конкуренти",
-                "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
-            ]
-            st.dataframe(
-                df_my[[c for c in my_cols if c in df_my.columns]],
-                use_container_width=True,
-                hide_index=True,
-                column_config=COL_CFG,
-            )
+    if not df_gap.empty:
+        excel_sheets["Gap"] = df_gap
 
-    with tab_shared:
-        st.caption("Донори, що лінкують і на тебе, і на конкурентів.")
-        if df_shared.empty:
-            st.info("ℹ️ Спільних донорів немає.")
-        else:
-            sh_cols = [
-                "Домен", "DR", "Органічний трафік", "К-сть конкурентів", "Конкуренти",
-                "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
-            ]
-            st.dataframe(
-                df_shared[[c for c in sh_cols if c in df_shared.columns]],
-                use_container_width=True,
-                hide_index=True,
-                column_config=COL_CFG,
-            )
+    df_my_xl = _site_df(my_donors)
+    if not df_my_xl.empty:
+        excel_sheets[f"Мій сайт ({my_domain})"[:31]] = df_my_xl
 
-    # ── Excel export ──────────────────────────────────────────────────────
-    sheets = {
-        "Gap (нові донори)": df_gap,
-        "Мої донори": df_my,
-        "Спільні": df_shared,
-    }
-    non_empty = {name: df for name, df in sheets.items() if not df.empty}
+    for cd in comp_domains:
+        df_comp = _site_df(donors_by_site.get(cd, {}))
+        if not df_comp.empty:
+            excel_sheets[f"Конкурент ({cd})"[:31]] = df_comp
 
-    if non_empty:
+    if excel_sheets:
         st.divider()
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            for sheet_name, df in non_empty.items():
+            for sheet_name, df in excel_sheets.items():
                 df.to_excel(writer, index=False, sheet_name=sheet_name)
         buf.seek(0)
         st.download_button(
-            "📥 Завантажити Excel (всі листи)",
+            "📥 Завантажити Excel",
             data=buf,
             file_name=f"backlink_gap_{my_domain}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
