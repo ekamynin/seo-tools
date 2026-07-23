@@ -39,7 +39,7 @@ if COLLAB_KEY and "catalog_loaded_at" not in st.session_state:
         except Exception:
             pass
 
-col1, col2, col3 = st.columns(3, gap="large")
+col1, col2, col3, col4 = st.columns(4, gap="large")
 
 with col1:
     st.markdown("### 🔗 Link Builder")
@@ -67,3 +67,12 @@ with col3:
         "DR і органічний трафік через Ahrefs."
     )
     st.page_link("pages/3_📊_Donor_Checker.py", label="Відкрити Donor Checker", icon="📊")
+
+with col4:
+    st.markdown("### 🎯 Competitor Backlinks")
+    st.markdown(
+        "Порівняння донорського профілю твого сайту та конкурентів. "
+        "Знаходить майданчики, яких у тебе ще немає. "
+        "DR, трафік і ціни з Collaborator."
+    )
+    st.page_link("pages/4_🎯_Competitor_Backlinks.py", label="Відкрити Competitor Backlinks", icon="🎯")

@@ -103,6 +103,49 @@ def _fetch_domain_metrics(api_key: str, domain: str) -> dict:
         }
 
 
+def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> list[dict]:
+    """Fetch top referring domains for a target, sorted by DR descending.
+    Returns list of dicts with keys: domain, domain_rating, org_traffic.
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    today = date.today().isoformat()
+    all_items: list[dict] = []
+    page_size = 1000
+    offset = 0
+
+    while len(all_items) < limit:
+        fetch_count = min(page_size, limit - len(all_items))
+        try:
+            resp = requests.get(
+                f"{AHREFS_BASE}/referring-domains",
+                headers=headers,
+                params={
+                    "target": target,
+                    "mode": "domain",
+                    "date": today,
+                    "select": "domain,domain_rating,org_traffic",
+                    "limit": fetch_count,
+                    "offset": offset,
+                    "order_by": "domain_rating:desc",
+                },
+                timeout=30,
+            )
+            if not resp.ok:
+                break
+            data = resp.json()
+            items = data.get("referring_domains", [])
+            if not items:
+                break
+            all_items.extend(items)
+            offset += len(items)
+            if len(items) < fetch_count:
+                break
+        except Exception:
+            break
+
+    return all_items
+
+
 def enrich_with_ahrefs(api_key: str, domains: list) -> dict:
     """Fetch DR, organic traffic, and traffic health for a list of domains.
     Returns: {domain: {dr, org_traffic, traffic_status, traffic_label}}
