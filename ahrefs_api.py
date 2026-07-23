@@ -133,7 +133,7 @@ def fetch_referring_domains(api_key: str, target: str, limit: int = 1000) -> lis
             if not resp.ok:
                 break
             data = resp.json()
-            items = data.get("referring_domains", [])
+            items = data.get("refdomains", [])
             if not items:
                 break
             all_items.extend(items)
