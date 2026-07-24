@@ -40,7 +40,7 @@ def fetch_historical_volume(
     date_to: str,
     progress_callback=None,
 ) -> list[dict]:
-    api_url = "https://api.dataforseo.com/v3/keywords_data/google_ads/historical_search_volume/live"
+    api_url = "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live"
     results = []
     total_batches = math.ceil(len(keywords) / BATCH_SIZE)
 
