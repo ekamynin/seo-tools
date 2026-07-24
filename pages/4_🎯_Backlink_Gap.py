@@ -19,6 +19,7 @@ st.set_page_config(
 
 AHREFS_KEY = st.secrets.get("AHREFS_API_KEY", "")
 COLLAB_KEY = st.secrets.get("COLLABORATOR_API_KEY", "")
+DONOR_LIMIT = 10_000
 
 
 def _norm(raw: str) -> str:
@@ -29,9 +30,9 @@ def _norm(raw: str) -> str:
     return d.split("/")[0].split("?")[0]
 
 
-def _fetch_site_donors(api_key: str, domain: str, limit: int) -> dict[str, dict]:
+def _fetch_site_donors(api_key: str, domain: str) -> dict[str, dict]:
     """Fetch referring domains. Returns {norm_domain: {dr, traffic, dofollow, raw_domain}}."""
-    items = fetch_referring_domains(api_key, domain, limit=limit)
+    items = fetch_referring_domains(api_key, domain, limit=DONOR_LIMIT)
     result = {}
     for item in items:
         d = _norm(item.get("domain", ""))
@@ -45,16 +46,16 @@ def _fetch_site_donors(api_key: str, domain: str, limit: int) -> dict[str, dict]
     return result
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _cached_donors(api_key: str, domain: str) -> dict[str, dict]:
+    """Fetch and cache referring domains for 24h per domain."""
+    return _fetch_site_donors(api_key, domain)
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Налаштування")
     st.divider()
-    donor_limit = st.select_slider(
-        "Донорів на сайт",
-        options=[500, 1000, 2000, 3000, 5000],
-        value=1000,
-        help="Топ N донорів за DR, що завантажуються для кожного сайту з Ahrefs.",
-    )
     min_dr = st.number_input(
         "Мінімальний DR донора",
         min_value=0,
@@ -75,7 +76,7 @@ with st.sidebar:
         help="Показати в Gap тільки донорів, що є в каталозі Collaborator.",
     )
     st.divider()
-    st.caption("Backlink Gap v1.1")
+    st.caption("Backlink Gap v1.2")
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
@@ -115,14 +116,14 @@ if run:
     comp_domains = [_norm(c) for c in competitors_raw]
     all_targets = [my_domain] + comp_domains
 
-    # ── Fetch donors from Ahrefs ──────────────────────────────────────────
+    # ── Fetch donors (cached per domain, 24h) ─────────────────────────────
     donors_by_site: dict[str, dict] = {}
     progress = st.progress(0.0, text="Завантажуємо донорів з Ahrefs…")
     fetch_errors = []
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
-            executor.submit(_fetch_site_donors, AHREFS_KEY, t, donor_limit): t
+            executor.submit(_cached_donors, AHREFS_KEY, t): t
             for t in all_targets
         }
         done_count = 0
@@ -142,11 +143,6 @@ if run:
     progress.empty()
     for err in fetch_errors:
         st.warning(f"⚠️ Помилка при завантаженні {err}")
-
-    # DEBUG — видалити після перевірки
-    with st.expander("🛠 Debug: к-сть донорів по сайтах"):
-        for t, donors in donors_by_site.items():
-            st.write(f"`{t}`: {len(donors)} донорів")
 
     my_donors = donors_by_site.get(my_domain, {})
 
@@ -212,12 +208,9 @@ if run:
     def _comp_count(domain: str) -> int:
         return sum(1 for cd in comp_domains if domain in donors_by_site.get(cd, {}))
 
-    # ── Gap DataFrame ─────────────────────────────────────────────────────
-    gap_rows = []
-    for d in gap_set:
-        info = all_comp_donors.get(d, {})
+    def _build_row(d: str, info: dict) -> dict:
         in_c, price, price_w, c_url = _collab(d)
-        gap_rows.append({
+        return {
             "Домен": info.get("raw_domain", d),
             "DR": info.get("dr"),
             "Трафік": info.get("traffic"),
@@ -228,8 +221,10 @@ if run:
             "Ціна публікації (грн)": price,
             "Ціна написання (грн)": price_w,
             "Collaborator": c_url,
-        })
-    df_gap = pd.DataFrame(gap_rows)
+        }
+
+    # ── Gap DataFrame ─────────────────────────────────────────────────────
+    df_gap = pd.DataFrame([_build_row(d, all_comp_donors.get(d, {})) for d in gap_set])
     if not df_gap.empty:
         df_gap = df_gap.sort_values(
             ["К-сть конкурентів", "DR"], ascending=[False, False]
@@ -237,6 +232,13 @@ if run:
 
     if collab_only and not df_gap.empty:
         df_gap = df_gap[df_gap["В Collaborator"] == "Так"].reset_index(drop=True)
+
+    # ── Shared DataFrame ──────────────────────────────────────────────────
+    df_shared = pd.DataFrame([_build_row(d, my_donors.get(d, {})) for d in shared_set])
+    if not df_shared.empty:
+        df_shared = df_shared.sort_values(
+            ["К-сть конкурентів", "DR"], ascending=[False, False]
+        ).reset_index(drop=True)
 
     # ── Helper: повний список донорів для одного сайту (для Excel) ────────
     def _site_df(donors: dict) -> pd.DataFrame:
@@ -280,15 +282,16 @@ if run:
         ),
     }
 
+    GAP_COLS = [
+        "Домен", "DR", "Трафік", "Dofollow", "К-сть конкурентів", "Конкуренти",
+        "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
+    ]
+
     st.caption("Донори конкурентів, яких у тебе ще немає. Відсортовано: к-сть конкурентів → DR.")
     if df_gap.empty:
         st.info("ℹ️ Gap-донорів не знайдено.")
     else:
-        gap_cols = [
-            "Домен", "DR", "Трафік", "Dofollow", "К-сть конкурентів", "Конкуренти",
-            "В Collaborator", "Ціна публікації (грн)", "Ціна написання (грн)", "Collaborator",
-        ]
-        display_df = df_gap[[c for c in gap_cols if c in df_gap.columns]]
+        display_df = df_gap[[c for c in GAP_COLS if c in df_gap.columns]]
 
         def _style_collab(df):
             styles = pd.DataFrame("", index=df.index, columns=df.columns)
@@ -302,11 +305,13 @@ if run:
             column_config=COL_CFG,
         )
 
-    # ── Excel — повна вигрузка по кожному сайту ───────────────────────────
+    # ── Excel ─────────────────────────────────────────────────────────────
     excel_sheets: dict[str, pd.DataFrame] = {}
 
     if not df_gap.empty:
         excel_sheets["Gap"] = df_gap
+    if not df_shared.empty:
+        excel_sheets["Спільні"] = df_shared
 
     df_my_xl = _site_df(my_donors)
     if not df_my_xl.empty:
@@ -323,7 +328,6 @@ if run:
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             for sheet_name, df in excel_sheets.items():
                 df.to_excel(writer, index=False, sheet_name=sheet_name)
-            # Clickable hyperlinks in Collaborator column
             wb = writer.book
             for sheet_name, df in excel_sheets.items():
                 if "Collaborator" not in df.columns:
