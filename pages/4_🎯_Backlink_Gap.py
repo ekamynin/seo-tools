@@ -196,8 +196,14 @@ if run:
         info = collab_lookup.get(domain)
         if info is None:
             return False, None, None, ""
-        price = int(info["price"]) if info.get("price") else None
-        price_w = int(info["price_writing"]) if info.get("price_writing") else None
+        try:
+            price = int(info["price"]) if pd.notna(info.get("price")) else None
+        except (ValueError, TypeError):
+            price = None
+        try:
+            price_w = int(info["price_writing"]) if pd.notna(info.get("price_writing")) else None
+        except (ValueError, TypeError):
+            price_w = None
         return True, price, price_w, info.get("collaborator_url", "")
 
     def _which_comps(domain: str) -> str:
