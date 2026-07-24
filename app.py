@@ -88,3 +88,12 @@ with col5:
         "До 500 ключів за раз, експорт у Excel з зведеною таблицею."
     )
     st.page_link("pages/5_📈_Keyword_Volume_History.py", label="Відкрити Keyword Volume History", icon="📈")
+
+with col6:
+    st.markdown("### 🏆 SERP Top 10")
+    st.markdown(
+        "Живий парс органічної видачі Google по списку ключів. "
+        "Топ-10 доменів, наявність AI Overview та джерела. "
+        "До 200 ключів за раз, експорт у Excel."
+    )
+    st.page_link("pages/6_🏆_SERP_Top10.py", label="Відкрити SERP Top 10", icon="🏆")
