@@ -76,3 +76,15 @@ with col4:
         "DR, трафік і ціни з Collaborator."
     )
     st.page_link("pages/4_🎯_Backlink_Gap.py", label="Відкрити Backlink Gap", icon="🎯")
+
+st.divider()
+col5, col6, col7, col8 = st.columns(4, gap="large")
+
+with col5:
+    st.markdown("### 📈 Keyword Volume History")
+    st.markdown(
+        "Помісячна динаміка пошукового попиту по списку ключів. "
+        "Дані Google Ads через DataForSEO. "
+        "До 500 ключів за раз, експорт у Excel з зведеною таблицею."
+    )
+    st.page_link("pages/5_📈_Keyword_Volume_History.py", label="Відкрити Keyword Volume History", icon="📈")
