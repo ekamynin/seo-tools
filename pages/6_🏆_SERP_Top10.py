@@ -20,10 +20,34 @@ KEYWORD_LIMIT = 200
 BATCH_SIZE = 10
 
 LOCATIONS = {
-    "🇺🇦 Україна (UK)": {"location_code": 2804, "language_code": "uk"},
-    "🇺🇦 Україна (RU)": {"location_code": 2804, "language_code": "ru"},
-    "🇺🇸 США (EN)": {"location_code": 2840, "language_code": "en"},
-    "🇵🇱 Польща (PL)": {"location_code": 2616, "language_code": "pl"},
+    "🇺🇦 Україна (UK)": {
+        "location_code": 2804, "language_code": "uk",
+        "cities": {
+            "🌍 Вся країна": None,
+            "🏙 Київ": "Kyiv,Ukraine",
+            "🏙 Львів": "Lviv,Lviv Oblast,Ukraine",
+            "🏙 Харків": "Kharkiv,Kharkiv Oblast,Ukraine",
+            "🏙 Одеса": "Odessa,Odessa Oblast,Ukraine",
+            "🏙 Дніпро": "Dnipro,Dnipropetrovsk Oblast,Ukraine",
+            "🏙 Запоріжжя": "Zaporizhzhia,Zaporizhzhia Oblast,Ukraine",
+            "🏙 Вінниця": "Vinnytsia,Vinnytsia Oblast,Ukraine",
+            "🏙 Полтава": "Poltava,Poltava Oblast,Ukraine",
+            "🏙 Івано-Франківськ": "Ivano-Frankivsk,Ivano-Frankivsk Oblast,Ukraine",
+        },
+    },
+    "🇺🇦 Україна (RU)": {
+        "location_code": 2804, "language_code": "ru",
+        "cities": {
+            "🌍 Вся країна": None,
+            "🏙 Київ": "Kyiv,Ukraine",
+            "🏙 Львів": "Lviv,Lviv Oblast,Ukraine",
+            "🏙 Харків": "Kharkiv,Kharkiv Oblast,Ukraine",
+            "🏙 Одеса": "Odessa,Odessa Oblast,Ukraine",
+            "🏙 Дніпро": "Dnipro,Dnipropetrovsk Oblast,Ukraine",
+        },
+    },
+    "🇺🇸 США (EN)": {"location_code": 2840, "language_code": "en", "cities": {}},
+    "🇵🇱 Польща (PL)": {"location_code": 2616, "language_code": "pl", "cities": {}},
 }
 
 SERP_URL = "https://api.dataforseo.com/v3/serp/google/organic/live/regular"
@@ -34,11 +58,15 @@ def _headers() -> dict:
     return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
 
 
-def _fetch_batch(batch: list[str], location_code: int, language_code: str) -> list[dict]:
-    payload = [
-        {"keyword": kw, "location_code": location_code, "language_code": language_code, "depth": 10}
-        for kw in batch
-    ]
+def _fetch_batch(batch: list[str], location_code: int, language_code: str, location_name: str | None = None) -> list[dict]:
+    def _task(kw: str) -> dict:
+        t = {"keyword": kw, "language_code": language_code, "depth": 10}
+        if location_name:
+            t["location_name"] = location_name
+        else:
+            t["location_code"] = location_code
+        return t
+    payload = [_task(kw) for kw in batch]
     resp = requests.post(SERP_URL, json=payload, headers=_headers(), timeout=60)
     resp.raise_for_status()
     data = resp.json()
@@ -47,7 +75,7 @@ def _fetch_batch(batch: list[str], location_code: int, language_code: str) -> li
     return data.get("tasks", [])
 
 
-def fetch_serp(keywords: list[str], location_code: int, language_code: str, progress_callback=None) -> list[dict]:
+def fetch_serp(keywords: list[str], location_code: int, language_code: str, location_name: str | None = None, progress_callback=None) -> list[dict]:
     batches = [keywords[i:i + BATCH_SIZE] for i in range(0, len(keywords), BATCH_SIZE)]
     all_tasks: list[dict] = []
     fetch_errors: list[str] = []
@@ -55,7 +83,7 @@ def fetch_serp(keywords: list[str], location_code: int, language_code: str, prog
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(_fetch_batch, batch, location_code, language_code): batch
+            executor.submit(_fetch_batch, batch, location_code, language_code, location_name): batch
             for batch in batches
         }
         for future in as_completed(futures):
@@ -119,6 +147,13 @@ with st.sidebar:
     st.divider()
     location_label = st.selectbox("Локація / Мова", list(LOCATIONS.keys()))
     loc = LOCATIONS[location_label]
+
+    cities = loc.get("cities", {})
+    location_name: str | None = None
+    if cities:
+        city_label = st.selectbox("Місто", list(cities.keys()))
+        location_name = cities[city_label]
+
     st.divider()
     st.caption("SERP Top 10 v1.0")
 
@@ -168,6 +203,7 @@ if run:
         keywords=keywords,
         location_code=loc["location_code"],
         language_code=loc["language_code"],
+        location_name=location_name,
         progress_callback=lambda done, total: progress.progress(
             done / total,
             text=f"Батч {done}/{total}…",
