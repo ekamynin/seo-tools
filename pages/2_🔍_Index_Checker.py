@@ -57,7 +57,7 @@ st.caption("Перевірка індексації, HTTP статусу, noinde
 # ── Session state init ────────────────────────────────────────────────────────
 for key, default in [
     ("api_login", ""), ("api_password", ""), ("api_key", ""),
-    ("verified", False), ("running", False),
+    ("verified", False),
     ("df_results", None), ("summary", None),
 ]:
     if key not in st.session_state:
@@ -208,14 +208,10 @@ st.divider()
 if not credentials_ok and urls:
     st.warning("Введіть API credentials у бічній панелі.")
 
-def _start_running():
-    st.session_state.running = True
-
 if st.button(
     "Перевірити",
     type="primary",
-    disabled=(not urls or not credentials_ok or st.session_state.running),
-    on_click=_start_running,
+    disabled=(not urls or not credentials_ok),
     use_container_width=True,
 ):
     if provider == "DataForSEO":
@@ -307,7 +303,6 @@ if st.button(
         "not_indexed": sum(1 for r in index_results if r.indexed is False),
         "errors":      sum(1 for r in index_results if r.error),
     }
-    st.session_state.running = False
 
 # ── Results ───────────────────────────────────────────────────────────────────
 if st.session_state.df_results is not None:
