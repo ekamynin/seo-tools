@@ -17,7 +17,7 @@ DATAFORSEO_LOGIN = st.secrets.get("DATAFORSEO_LOGIN", "")
 DATAFORSEO_PASSWORD = st.secrets.get("DATAFORSEO_PASSWORD", "")
 
 KEYWORD_LIMIT = 200
-BATCH_SIZE = 10
+MAX_WORKERS = 5
 
 LOCATIONS = {
     "🇺🇦 Україна (UK)": {
@@ -58,42 +58,49 @@ def _headers() -> dict:
     return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
 
 
-def _fetch_batch(batch: list[str], location_code: int, language_code: str, location_name: str | None = None) -> list[dict]:
-    def _task(kw: str) -> dict:
-        t = {"keyword": kw, "language_code": language_code, "depth": 10}
-        if location_name:
-            t["location_name"] = location_name
-        else:
-            t["location_code"] = location_code
-        return t
-    payload = [_task(kw) for kw in batch]
+def _fetch_keyword(keyword: str, location_code: int, language_code: str, location_name: str | None = None) -> dict:
+    task = {"keyword": keyword, "language_code": language_code, "depth": 10}
+    if location_name:
+        task["location_name"] = location_name
+    else:
+        task["location_code"] = location_code
+
+    # DataForSEO Live SERP accepts exactly one task per API call.
+    payload = [task]
     resp = requests.post(SERP_URL, json=payload, headers=_headers(), timeout=60)
     resp.raise_for_status()
     data = resp.json()
     if data.get("status_code") != 20000:
         raise Exception(f"API error {data.get('status_code')}: {data.get('status_message')}")
-    return data.get("tasks", [])
+    tasks = data.get("tasks") or []
+    if not tasks:
+        raise Exception(f"Порожня відповідь API для ключа «{keyword}»")
+    api_task = tasks[0]
+    if api_task.get("status_code") != 20000:
+        raise Exception(
+            f"Ключ «{keyword}»: {api_task.get('status_message', 'API error')}"
+        )
+    return api_task
 
 
 def fetch_serp(keywords: list[str], location_code: int, language_code: str, location_name: str | None = None, progress_callback=None) -> list[dict]:
-    batches = [keywords[i:i + BATCH_SIZE] for i in range(0, len(keywords), BATCH_SIZE)]
     all_tasks: list[dict] = []
     fetch_errors: list[str] = []
     done_count = 0
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
-            executor.submit(_fetch_batch, batch, location_code, language_code, location_name): batch
-            for batch in batches
+            executor.submit(_fetch_keyword, keyword, location_code, language_code, location_name): keyword
+            for keyword in keywords
         }
         for future in as_completed(futures):
             try:
-                all_tasks.extend(future.result())
+                all_tasks.append(future.result())
             except Exception as e:
                 fetch_errors.append(str(e))
             done_count += 1
             if progress_callback:
-                progress_callback(done_count, len(batches))
+                progress_callback(done_count, len(keywords))
 
     results = []
     for task in all_tasks:
@@ -196,7 +203,6 @@ run = st.button(
 )
 
 if run:
-    batches_count = -(-len(keywords) // BATCH_SIZE)
     progress = st.progress(0.0, text="Запит до DataForSEO…")
 
     results, fetch_errors = fetch_serp(
@@ -206,7 +212,7 @@ if run:
         location_name=location_name,
         progress_callback=lambda done, total: progress.progress(
             done / total,
-            text=f"Батч {done}/{total}…",
+            text=f"Ключ {done}/{total}…",
         ),
     )
 
