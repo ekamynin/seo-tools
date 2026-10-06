@@ -20,7 +20,8 @@ st.set_page_config(
 )
 
 MAX_FILES = 50
-MAX_FILE_SIZE = 25 * 1024 * 1024
+MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_BATCH_SIZE = 100 * 1024 * 1024
 ROLE_OPTIONS = ["p", "h2", "h3", "h4", "ul", "ol"]
 
 
@@ -52,7 +53,7 @@ uploaded_files = st.file_uploader(
     "Завантажте DOCX-файли",
     type=["docx"],
     accept_multiple_files=True,
-    help=f"До {MAX_FILES} файлів, максимум 25 МБ кожен.",
+    help=f"До {MAX_FILES} файлів, максимум 10 МБ кожен і 100 МБ на всю пачку.",
 )
 
 if len(uploaded_files) > MAX_FILES:
@@ -62,11 +63,24 @@ oversized = [file.name for file in uploaded_files if file.size > MAX_FILE_SIZE]
 if oversized:
     st.error("Завеликі файли: " + ", ".join(oversized))
 
+batch_size = sum(file.size for file in uploaded_files)
+batch_too_large = batch_size > MAX_BATCH_SIZE
+if batch_too_large:
+    st.error(
+        f"Загальний розмір пачки перевищує 100 МБ: "
+        f"{batch_size / (1024 * 1024):.1f} МБ."
+    )
+
 process = st.button(
     "⚙️ Обробити документи",
     type="primary",
     use_container_width=True,
-    disabled=not uploaded_files or len(uploaded_files) > MAX_FILES or bool(oversized),
+    disabled=(
+        not uploaded_files
+        or len(uploaded_files) > MAX_FILES
+        or bool(oversized)
+        or batch_too_large
+    ),
 )
 
 if process:
