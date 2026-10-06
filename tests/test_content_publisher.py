@@ -1,5 +1,6 @@
 import io
 import zipfile
+from unittest.mock import Mock, patch
 
 from docx import Document
 from docx.oxml import OxmlElement
@@ -7,6 +8,12 @@ from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 
 from content_publisher.models import Block, DocumentResult, InlinePart
+from content_publisher.google_docs import (
+    GoogleDocsError,
+    download_google_doc,
+    extract_google_doc_id,
+    extract_google_doc_links,
+)
 from content_publisher.parser import parse_docx
 from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
 from content_publisher.text_parser import parse_plain_text, parse_rich_text
@@ -154,6 +161,55 @@ def test_rich_text_uses_full_bold_short_paragraph_as_heading_signal():
 
     assert result.blocks[0].role == "h2"
     assert "<strong" not in render_html(result.blocks)
+
+
+def test_google_docs_links_are_extracted_from_markdown_and_deduplicated():
+    first = "https://docs.google.com/document/d/abc_123/edit?tab=t.0"
+    second = "https://docs.google.com/document/u/0/d/xyz-789/edit"
+    text = f"| [{first}]({first}) |\n| {second} |"
+
+    assert extract_google_doc_links(text) == [first, second]
+    assert extract_google_doc_id(first) == "abc_123"
+    assert extract_google_doc_id(second) == "xyz-789"
+
+
+def test_google_doc_download_checks_type_size_and_filename():
+    response = Mock()
+    response.status_code = 200
+    response.headers = {
+        "content-type": (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        "content-disposition": "attachment; filename*=UTF-8''Test%20Article.docx",
+        "content-length": "6",
+    }
+    response.iter_content.return_value = [b"doc", b"x!!"]
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+
+    with patch("content_publisher.google_docs.requests.get", return_value=response):
+        data, filename = download_google_doc(
+            "https://docs.google.com/document/d/abc_123/edit", 10
+        )
+
+    assert data == b"docx!!"
+    assert filename == "Test Article.docx"
+
+
+def test_google_doc_download_rejects_non_docx_response():
+    response = Mock()
+    response.status_code = 200
+    response.headers = {"content-type": "text/html"}
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+
+    with patch("content_publisher.google_docs.requests.get", return_value=response):
+        try:
+            download_google_doc("https://docs.google.com/document/d/abc/edit", 100)
+        except GoogleDocsError as exc:
+            assert "не віддав DOCX" in str(exc)
+        else:
+            raise AssertionError("Expected GoogleDocsError")
 
 
 def test_leroy_merlin_renderer_uses_required_markup():

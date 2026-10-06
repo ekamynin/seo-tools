@@ -13,6 +13,11 @@ from content_publisher import (
     render_html,
     validate_html,
 )
+from content_publisher.google_docs import (
+    GoogleDocsError,
+    download_google_doc,
+    extract_google_doc_links,
+)
 from content_publisher.text_parser import parse_rich_text
 
 
@@ -54,7 +59,7 @@ profile = "leroy_merlin" if leroy_mode else "default"
 
 input_mode = st.radio(
     "Додайте матеріал",
-    ["DOCX-файли", "Вставити текст"],
+    ["DOCX-файли", "Google Docs", "Вставити текст"],
     horizontal=True,
 )
 
@@ -111,6 +116,55 @@ if input_mode == "DOCX-файли":
         st.session_state["content_publisher_failures"] = failures
         st.session_state["content_publisher_total_files"] = len(uploaded_files)
         st.session_state["content_publisher_source_mode"] = input_mode
+elif input_mode == "Google Docs":
+    links_text = st.text_area(
+        "Вставте посилання Google Docs",
+        height=180,
+        placeholder=(
+            "Кожне посилання з нового рядка. Можна також вставити "
+            "скопійовану колонку з Google Sheets."
+        ),
+    )
+    google_links = extract_google_doc_links(links_text)
+    st.caption(
+        f"Знайдено документів: {len(google_links)}. "
+        "Доступ: «Усі, хто має посилання — читач»."
+    )
+    too_many_links = len(google_links) > MAX_FILES
+    if too_many_links:
+        st.error(f"Можна обробити не більше {MAX_FILES} документів за один запуск.")
+    process = st.button(
+        "⚙️ Завантажити та обробити",
+        type="primary",
+        use_container_width=True,
+        disabled=not google_links or too_many_links,
+    )
+    if process:
+        results = []
+        failures = []
+        total_size = 0
+        progress = st.progress(0.0, text="Завантажуємо Google Docs…")
+        for position, link in enumerate(google_links):
+            try:
+                data, filename = download_google_doc(link, MAX_FILE_SIZE)
+                if total_size + len(data) > MAX_BATCH_SIZE:
+                    raise GoogleDocsError(
+                        "Загальний розмір пачки перевищує 100 МБ."
+                    )
+                total_size += len(data)
+                results.append(parse_docx(data, filename))
+            except Exception as exc:
+                document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
+                failures.append(f"Google Doc {document_id[:10]}: {exc}")
+            progress.progress(
+                (position + 1) / len(google_links),
+                text=f"Оброблено {position + 1}/{len(google_links)}",
+            )
+        progress.empty()
+        st.session_state["content_publisher_results"] = results
+        st.session_state["content_publisher_failures"] = failures
+        st.session_state["content_publisher_total_files"] = len(google_links)
+        st.session_state["content_publisher_source_mode"] = input_mode
 else:
     st.markdown("**Скопіюйте та вставте текст**")
     pasted_html = st_quill(
@@ -154,7 +208,7 @@ total_files = st.session_state.get(
     len(results) + len(failures),
 )
 
-if (results or failures) and input_mode == "DOCX-файли":
+if (results or failures) and input_mode in ("DOCX-файли", "Google Docs"):
     st.divider()
     summary_rows = []
     result_statuses = []
@@ -234,7 +288,7 @@ if (results or failures) and input_mode == "DOCX-файли":
 
 if results:
     st.divider()
-    if input_mode == "DOCX-файли":
+    if input_mode in ("DOCX-файли", "Google Docs"):
         default_index = next(
             (index for index, status in enumerate(result_statuses) if status != "✅ Готово"),
             0,
@@ -313,7 +367,7 @@ if results:
         st.caption("Натисніть значок копіювання у правому верхньому куті блоку.")
         st.code(fragment, language="html", line_numbers=True)
 
-    if input_mode == "DOCX-файли":
+    if input_mode in ("DOCX-файли", "Google Docs"):
         st.download_button(
             "⬇️ Завантажити DOCX з HTML-кодом",
             data=build_docx(fragment),
