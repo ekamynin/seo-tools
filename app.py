@@ -97,3 +97,12 @@ with col6:
         "До 200 ключів за раз, експорт у Excel."
     )
     st.page_link("pages/6_🏆_SERP_Top10.py", label="Відкрити SERP Top 10", icon="🏆")
+
+with col7:
+    st.markdown("### 📄 Content Publisher")
+    st.markdown(
+        "Пакетне перетворення DOCX у чисті HTML-фрагменти. "
+        "Розпізнавання заголовків і списків, перевірка структури "
+        "та окремий режим для Leroy Merlin."
+    )
+    st.page_link("pages/7_📄_Content_Publisher.py", label="Відкрити Content Publisher", icon="📄")
