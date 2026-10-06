@@ -8,6 +8,7 @@ from content_publisher import (
     build_docx,
     build_docx_zip,
     parse_docx,
+    parse_plain_text,
     render_html,
     validate_html,
 )
@@ -31,7 +32,7 @@ def _result_key(filename: str, position: int) -> str:
 
 
 st.title("📄 Content Publisher")
-st.caption("Пакетне перетворення DOCX у чисті HTML-фрагменти без зайвих тегів.")
+st.caption("Перетворення DOCX або вставленого тексту в чисті HTML-фрагменти.")
 
 with st.sidebar:
     st.markdown("## ⚙️ Налаштування")
@@ -49,66 +50,100 @@ with st.sidebar:
 
 profile = "leroy_merlin" if leroy_mode else "default"
 
-uploaded_files = st.file_uploader(
-    "Завантажте DOCX-файли",
-    type=["docx"],
-    accept_multiple_files=True,
-    help=f"До {MAX_FILES} файлів, максимум 10 МБ кожен і 100 МБ на всю пачку.",
+input_mode = st.radio(
+    "Додайте матеріал",
+    ["DOCX-файли", "Вставити текст"],
+    horizontal=True,
 )
 
-if len(uploaded_files) > MAX_FILES:
-    st.error(f"Можна обробити не більше {MAX_FILES} файлів за один запуск.")
-
-oversized = [file.name for file in uploaded_files if file.size > MAX_FILE_SIZE]
-if oversized:
-    st.error("Завеликі файли: " + ", ".join(oversized))
-
-batch_size = sum(file.size for file in uploaded_files)
-batch_too_large = batch_size > MAX_BATCH_SIZE
-if batch_too_large:
-    st.error(
-        f"Загальний розмір пачки перевищує 100 МБ: "
-        f"{batch_size / (1024 * 1024):.1f} МБ."
+if input_mode == "DOCX-файли":
+    uploaded_files = st.file_uploader(
+        "Завантажте DOCX-файли",
+        type=["docx"],
+        accept_multiple_files=True,
+        help=f"До {MAX_FILES} файлів, максимум 10 МБ кожен і 100 МБ на всю пачку.",
     )
 
-process = st.button(
-    "⚙️ Обробити документи",
-    type="primary",
-    use_container_width=True,
-    disabled=(
-        not uploaded_files
-        or len(uploaded_files) > MAX_FILES
-        or bool(oversized)
-        or batch_too_large
-    ),
-)
+    if len(uploaded_files) > MAX_FILES:
+        st.error(f"Можна обробити не більше {MAX_FILES} файлів за один запуск.")
 
-if process:
-    results = []
-    failures = []
-    progress = st.progress(0.0, text="Читаємо документи…")
-    for position, uploaded in enumerate(uploaded_files):
-        try:
-            results.append(parse_docx(uploaded.getvalue(), uploaded.name))
-        except Exception as exc:
-            failures.append(f"{uploaded.name}: {exc}")
-        progress.progress(
-            (position + 1) / len(uploaded_files),
-            text=f"Оброблено {position + 1}/{len(uploaded_files)}",
+    oversized = [file.name for file in uploaded_files if file.size > MAX_FILE_SIZE]
+    if oversized:
+        st.error("Завеликі файли: " + ", ".join(oversized))
+
+    batch_size = sum(file.size for file in uploaded_files)
+    batch_too_large = batch_size > MAX_BATCH_SIZE
+    if batch_too_large:
+        st.error(
+            f"Загальний розмір пачки перевищує 100 МБ: "
+            f"{batch_size / (1024 * 1024):.1f} МБ."
         )
-    progress.empty()
-    st.session_state["content_publisher_results"] = results
-    st.session_state["content_publisher_failures"] = failures
-    st.session_state["content_publisher_total_files"] = len(uploaded_files)
 
-results = st.session_state.get("content_publisher_results", [])
-failures = st.session_state.get("content_publisher_failures", [])
+    process = st.button(
+        "⚙️ Обробити документи",
+        type="primary",
+        use_container_width=True,
+        disabled=(
+            not uploaded_files
+            or len(uploaded_files) > MAX_FILES
+            or bool(oversized)
+            or batch_too_large
+        ),
+    )
+
+    if process:
+        results = []
+        failures = []
+        progress = st.progress(0.0, text="Читаємо документи…")
+        for position, uploaded in enumerate(uploaded_files):
+            try:
+                results.append(parse_docx(uploaded.getvalue(), uploaded.name))
+            except Exception as exc:
+                failures.append(f"{uploaded.name}: {exc}")
+            progress.progress(
+                (position + 1) / len(uploaded_files),
+                text=f"Оброблено {position + 1}/{len(uploaded_files)}",
+            )
+        progress.empty()
+        st.session_state["content_publisher_results"] = results
+        st.session_state["content_publisher_failures"] = failures
+        st.session_state["content_publisher_total_files"] = len(uploaded_files)
+        st.session_state["content_publisher_source_mode"] = input_mode
+else:
+    pasted_text = st.text_area(
+        "Скопіюйте та вставте текст",
+        height=320,
+        placeholder=(
+            "Вставте сюди готовий текст. Кожен абзац або заголовок "
+            "має бути з нового рядка."
+        ),
+    )
+    st.caption(f"Символів: {len(pasted_text):,}".replace(",", " "))
+    st.caption(
+        "Форматування та приховані посилання з буфера не переносяться; "
+        "для їх збереження використовуйте DOCX."
+    )
+    process = st.button(
+        "⚙️ Перетворити текст",
+        type="primary",
+        use_container_width=True,
+        disabled=not pasted_text.strip(),
+    )
+    if process:
+        st.session_state["content_publisher_results"] = [parse_plain_text(pasted_text)]
+        st.session_state["content_publisher_failures"] = []
+        st.session_state["content_publisher_total_files"] = 1
+        st.session_state["content_publisher_source_mode"] = input_mode
+
+same_mode = st.session_state.get("content_publisher_source_mode") == input_mode
+results = st.session_state.get("content_publisher_results", []) if same_mode else []
+failures = st.session_state.get("content_publisher_failures", []) if same_mode else []
 total_files = st.session_state.get(
     "content_publisher_total_files",
     len(results) + len(failures),
 )
 
-if results or failures:
+if (results or failures) and input_mode == "DOCX-файли":
     st.divider()
     summary_rows = []
     result_statuses = []
@@ -188,16 +223,20 @@ if results or failures:
 
 if results:
     st.divider()
-    default_index = next(
-        (index for index, status in enumerate(result_statuses) if status != "✅ Готово"),
-        0,
-    )
-    selected_position = st.selectbox(
-        "Документ для перегляду",
-        options=list(range(len(results))),
-        index=default_index,
-        format_func=lambda index: results[index].filename,
-    )
+    if input_mode == "DOCX-файли":
+        default_index = next(
+            (index for index, status in enumerate(result_statuses) if status != "✅ Готово"),
+            0,
+        )
+        selected_position = st.selectbox(
+            "Документ для перегляду",
+            options=list(range(len(results))),
+            index=default_index,
+            format_func=lambda index: results[index].filename,
+        )
+    else:
+        selected_position = 0
+        st.markdown("### Результат")
     result = results[selected_position]
 
     for warning in result.warnings:
@@ -260,23 +299,25 @@ if results:
         """
         components.html(preview, height=420, scrolling=True)
     with code_tab:
+        st.caption("Натисніть значок копіювання у правому верхньому куті блоку.")
         st.code(fragment, language="html", line_numbers=True)
 
-    st.download_button(
-        "⬇️ Завантажити DOCX з HTML-кодом",
-        data=build_docx(fragment),
-        file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        key=f"download_{_result_key(result.filename, selected_position)}_{profile}",
-        disabled=bool(validation_errors),
-    )
+    if input_mode == "DOCX-файли":
+        st.download_button(
+            "⬇️ Завантажити DOCX з HTML-кодом",
+            data=build_docx(fragment),
+            file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key=f"download_{_result_key(result.filename, selected_position)}_{profile}",
+            disabled=bool(validation_errors),
+        )
 
-    st.divider()
-    zip_data = build_docx_zip(results, profile)
-    st.download_button(
-        "📦 Завантажити всі DOCX у ZIP",
-        data=zip_data,
-        file_name="content_publisher_docx.zip",
-        mime="application/zip",
-        use_container_width=True,
-    )
+        st.divider()
+        zip_data = build_docx_zip(results, profile)
+        st.download_button(
+            "📦 Завантажити всі DOCX у ZIP",
+            data=zip_data,
+            file_name="content_publisher_docx.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )

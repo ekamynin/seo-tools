@@ -7,7 +7,7 @@ from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 
 from content_publisher.models import Block, DocumentResult, InlinePart
-from content_publisher.parser import parse_docx
+from content_publisher.parser import parse_docx, parse_plain_text
 from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
 
 
@@ -106,6 +106,28 @@ def test_short_document_without_headings_is_not_flagged():
 
     assert not any("полотном" in warning for warning in result.warnings)
     assert not any("Заголовки не розпізнані" in warning for warning in result.warnings)
+
+
+def test_pasted_text_detects_heading_paragraphs_and_lists():
+    text = """Як обрати матеріал
+Це достатньо довгий абзац, щоб короткий попередній рядок був визначений як заголовок для статті.
+• Перший пункт
+• Другий пункт"""
+
+    result = parse_plain_text(text)
+
+    assert [block.role for block in result.blocks] == ["h2", "p", "ul", "ul"]
+    assert result.blocks[0].confidence == 0.55
+    assert "<ul>" in render_html(result.blocks)
+    assert "•" not in render_html(result.blocks)
+
+
+def test_pasted_html_is_escaped_instead_of_executed():
+    result = parse_plain_text("<script>alert('x')</script>")
+
+    assert render_html(result.blocks) == (
+        "<p>&lt;script&gt;alert('x')&lt;/script&gt;</p>"
+    )
 
 
 def test_leroy_merlin_renderer_uses_required_markup():
