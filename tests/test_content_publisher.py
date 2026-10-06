@@ -1,13 +1,14 @@
 import io
+import zipfile
 
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 
-from content_publisher.models import Block, InlinePart
+from content_publisher.models import Block, DocumentResult, InlinePart
 from content_publisher.parser import parse_docx
-from content_publisher.renderer import render_html, validate_html
+from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
 
 
 def _docx_bytes(build) -> bytes:
@@ -131,3 +132,31 @@ def test_hyperlink_is_extracted_from_docx_and_rendered():
     assert fragment == (
         '<p>Перейдіть до <a href="https://example.com/catalog">каталогу</a>.</p>'
     )
+
+
+def test_docx_export_contains_visible_html_source():
+    fragment = "<h2>Заголовок</h2>\n<p>Текст без <strong>жирного</strong>.</p>"
+
+    exported = Document(io.BytesIO(build_docx(fragment)))
+
+    assert exported.paragraphs[0].text == fragment
+
+
+def test_batch_export_contains_docx_files_with_html_source():
+    result = DocumentResult(
+        filename="Стаття.docx",
+        blocks=[
+            Block(
+                index=1,
+                text="Заголовок",
+                parts=[InlinePart("Заголовок")],
+                role="h2",
+            )
+        ],
+    )
+
+    archive = zipfile.ZipFile(io.BytesIO(build_docx_zip([result])))
+
+    assert archive.namelist() == ["Стаття_HTML.docx"]
+    exported = Document(io.BytesIO(archive.read("Стаття_HTML.docx")))
+    assert exported.paragraphs[0].text == "<h2>Заголовок</h2>"

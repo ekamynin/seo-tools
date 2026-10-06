@@ -4,7 +4,13 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from content_publisher import build_zip, parse_docx, render_html, validate_html
+from content_publisher import (
+    build_docx,
+    build_docx_zip,
+    parse_docx,
+    render_html,
+    validate_html,
+)
 
 
 st.set_page_config(
@@ -141,9 +147,15 @@ if results:
             with preview_tab:
                 preview = f"""
                 <style>
-                    body {{ font: 16px/1.55 Arial, sans-serif; color: #202124; padding: 4px 16px; }}
+                    html, body {{
+                        background: #ffffff !important;
+                        color: #202124 !important;
+                        font: 16px/1.55 Arial, sans-serif;
+                        padding: 4px 16px;
+                    }}
                     h2, h3, h4 {{ margin: 1.1em 0 .45em; }}
                     p {{ margin: .6em 0; }}
+                    a {{ color: #0b57d0 !important; }}
                 </style>
                 {fragment}
                 """
@@ -152,20 +164,20 @@ if results:
                 st.code(fragment, language="html", line_numbers=True)
 
             st.download_button(
-                "⬇️ Завантажити HTML",
-                data=fragment.encode("utf-8"),
-                file_name=f"{result.filename.rsplit('.', 1)[0]}.html",
-                mime="text/html",
+                "⬇️ Завантажити DOCX з HTML-кодом",
+                data=build_docx(fragment),
+                file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 key=f"download_{_result_key(result.filename, position)}_{profile}",
                 disabled=bool(validation_errors),
             )
 
     st.divider()
-    zip_data = build_zip(results, profile)
+    zip_data = build_docx_zip(results, profile)
     st.download_button(
-        "📦 Завантажити всі HTML у ZIP",
+        "📦 Завантажити всі DOCX у ZIP",
         data=zip_data,
-        file_name="content_publisher_html.zip",
+        file_name="content_publisher_docx.zip",
         mime="application/zip",
         use_container_width=True,
     )

@@ -7,6 +7,9 @@ import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+from docx import Document
+from docx.shared import Pt
+
 from .models import Block, DocumentResult, InlinePart
 
 
@@ -116,10 +119,33 @@ def validate_html(fragment: str, profile: str = "default") -> list[str]:
 
 def _output_name(source_name: str) -> str:
     stem = _UNSAFE_FILENAME_RE.sub("_", Path(source_name).stem).strip(" ._") or "document"
-    return f"{stem}.html"
+    return f"{stem}_HTML.docx"
 
 
-def build_zip(results: list[DocumentResult], profile: str = "default") -> bytes:
+def build_docx(fragment: str) -> bytes:
+    """Create a DOCX containing the HTML fragment as visible, copyable source."""
+
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = section.bottom_margin = Pt(36)
+    section.left_margin = section.right_margin = Pt(36)
+
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = "Consolas"
+    normal_style.font.size = Pt(10)
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.add_run(fragment)
+    run.font.name = "Consolas"
+    run.font.size = Pt(10)
+
+    output = io.BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+def build_docx_zip(results: list[DocumentResult], profile: str = "default") -> bytes:
     output = io.BytesIO()
     used_names: set[str] = set()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -128,8 +154,9 @@ def build_zip(results: list[DocumentResult], profile: str = "default") -> bytes:
             name = base_name
             suffix = 2
             while name.lower() in used_names:
-                name = f"{Path(base_name).stem}_{suffix}.html"
+                name = f"{Path(base_name).stem}_{suffix}.docx"
                 suffix += 1
             used_names.add(name.lower())
-            archive.writestr(name, render_html(result.blocks, profile))
+            fragment = render_html(result.blocks, profile)
+            archive.writestr(name, build_docx(fragment))
     return output.getvalue()
