@@ -3,6 +3,8 @@ import hashlib
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from bs4 import BeautifulSoup
+from streamlit_quill import st_quill
 
 from content_publisher import (
     build_docx,
@@ -11,7 +13,7 @@ from content_publisher import (
     render_html,
     validate_html,
 )
-from content_publisher.text_parser import parse_plain_text
+from content_publisher.text_parser import parse_rich_text
 
 
 st.set_page_config(
@@ -110,18 +112,27 @@ if input_mode == "DOCX-файли":
         st.session_state["content_publisher_total_files"] = len(uploaded_files)
         st.session_state["content_publisher_source_mode"] = input_mode
 else:
-    pasted_text = st.text_area(
-        "Скопіюйте та вставте текст",
-        height=320,
+    st.markdown("**Скопіюйте та вставте текст**")
+    pasted_html = st_quill(
+        value="",
         placeholder=(
-            "Вставте сюди готовий текст. Кожен абзац або заголовок "
-            "має бути з нового рядка."
+            "Вставте сюди текст з Google Docs — заголовки, "
+            "списки та посилання збережуться."
         ),
+        html=True,
+        toolbar=[
+            [{"header": [1, 2, 3, 4, False]}],
+            [{"list": "ordered"}, {"list": "bullet"}],
+            ["bold", "italic", "underline", "link", "clean"],
+        ],
+        key="content_publisher_rich_text",
     )
+    pasted_html = pasted_html or ""
+    pasted_text = BeautifulSoup(pasted_html, "html.parser").get_text(" ", strip=True)
     st.caption(f"Символів: {len(pasted_text):,}".replace(",", " "))
     st.caption(
-        "Форматування та приховані посилання з буфера не переносяться; "
-        "для їх збереження використовуйте DOCX."
+        "Зберігаємо структуру з Google Docs, а зайве візуальне "
+        "форматування у готовому HTML видаляємо."
     )
     process = st.button(
         "⚙️ Перетворити текст",
@@ -130,7 +141,7 @@ else:
         disabled=not pasted_text.strip(),
     )
     if process:
-        st.session_state["content_publisher_results"] = [parse_plain_text(pasted_text)]
+        st.session_state["content_publisher_results"] = [parse_rich_text(pasted_html)]
         st.session_state["content_publisher_failures"] = []
         st.session_state["content_publisher_total_files"] = 1
         st.session_state["content_publisher_source_mode"] = input_mode

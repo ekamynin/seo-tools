@@ -9,7 +9,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE
 from content_publisher.models import Block, DocumentResult, InlinePart
 from content_publisher.parser import parse_docx
 from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
-from content_publisher.text_parser import parse_plain_text
+from content_publisher.text_parser import parse_plain_text, parse_rich_text
 
 
 def _docx_bytes(build) -> bytes:
@@ -129,6 +129,31 @@ def test_pasted_html_is_escaped_instead_of_executed():
     assert render_html(result.blocks) == (
         "<p>&lt;script&gt;alert('x')&lt;/script&gt;</p>"
     )
+
+
+def test_rich_text_preserves_heading_ordered_list_and_link():
+    result = parse_rich_text(
+        "<h1>Як носити панаму?</h1>"
+        "<p>Перевага сучасної панами — її універсальність.</p>"
+        "<ol><li>біла сорочка</li><li>лляний костюм</li></ol>"
+        '<p><a href="https://example.com/catalog">Перейти до каталогу</a></p>'
+    )
+
+    assert [block.role for block in result.blocks] == ["h2", "p", "ol", "ol", "p"]
+    fragment = render_html(result.blocks)
+    assert "<h2>Як носити панаму?</h2>" in fragment
+    assert "<ol>" in fragment
+    assert '<a href="https://example.com/catalog">' in fragment
+
+
+def test_rich_text_uses_full_bold_short_paragraph_as_heading_signal():
+    result = parse_rich_text(
+        "<p><strong>Найпростіші поєднання</strong></p>"
+        "<p>Це достатньо довгий наступний абзац для перевірки того, що попередній жирний рядок визначається як заголовок.</p>"
+    )
+
+    assert result.blocks[0].role == "h2"
+    assert "<strong" not in render_html(result.blocks)
 
 
 def test_leroy_merlin_renderer_uses_required_markup():
