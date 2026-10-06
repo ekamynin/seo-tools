@@ -8,10 +8,10 @@ from content_publisher import (
     build_docx,
     build_docx_zip,
     parse_docx,
-    parse_plain_text,
     render_html,
     validate_html,
 )
+from content_publisher.text_parser import parse_plain_text
 
 
 st.set_page_config(

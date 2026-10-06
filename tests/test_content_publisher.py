@@ -7,8 +7,9 @@ from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 
 from content_publisher.models import Block, DocumentResult, InlinePart
-from content_publisher.parser import parse_docx, parse_plain_text
+from content_publisher.parser import parse_docx
 from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
+from content_publisher.text_parser import parse_plain_text
 
 
 def _docx_bytes(build) -> bytes:
