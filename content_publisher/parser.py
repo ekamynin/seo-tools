@@ -18,6 +18,8 @@ from .models import Block, DocumentResult, InlinePart
 _HEADING_NAME_RE = re.compile(r"(?:heading|заголовок)\s*([1-9])", re.IGNORECASE)
 _HEADING_ID_RE = re.compile(r"heading([1-9])", re.IGNORECASE)
 _TERMINAL_PUNCTUATION_RE = re.compile(r"[.!;:,…]$")
+_LONG_SINGLE_BLOCK_THRESHOLD = 300
+_LONG_DOCUMENT_THRESHOLD = 500
 
 
 def _iter_document_blocks(document: _Document):
@@ -256,6 +258,28 @@ def _classify(blocks: list[Block]) -> None:
         block.reason = "Звичайний абзац"
 
 
+def _append_structure_warnings(result: DocumentResult) -> None:
+    if not result.blocks:
+        return
+
+    total_text_length = sum(len(block.text) for block in result.blocks)
+    has_headings = any(block.role.startswith("h") for block in result.blocks)
+
+    if (
+        len(result.blocks) == 1
+        and total_text_length >= _LONG_SINGLE_BLOCK_THRESHOLD
+        and not has_headings
+    ):
+        result.warnings.append(
+            "Документ завантажений суцільним полотном. "
+            "Перевірте розбивку на абзаци та заголовки."
+        )
+    elif total_text_length >= _LONG_DOCUMENT_THRESHOLD and not has_headings:
+        result.warnings.append(
+            "Заголовки не розпізнані. Перевірте структуру документа."
+        )
+
+
 def parse_docx(data: bytes, filename: str) -> DocumentResult:
     """Parse a DOCX into semantic blocks without changing its wording."""
 
@@ -301,6 +325,7 @@ def parse_docx(data: bytes, filename: str) -> DocumentResult:
         result.warnings.append("Не знайдено текстових абзаців для конвертації.")
 
     _classify(result.blocks)
+    _append_structure_warnings(result)
     uncertain = sum(1 for block in result.blocks if block.confidence < 0.7)
     if uncertain:
         result.warnings.append(

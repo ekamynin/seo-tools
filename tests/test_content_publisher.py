@@ -77,6 +77,37 @@ def test_fully_bold_short_paragraph_is_heading_candidate():
     assert result.blocks[0].confidence >= 0.8
 
 
+def test_long_single_paragraph_is_flagged_as_unstructured_canvas():
+    def build(document):
+        document.add_paragraph("Це великий нерозмічений текст. " * 20)
+
+    result = parse_docx(_docx_bytes(build), "canvas.docx")
+
+    assert [block.role for block in result.blocks] == ["p"]
+    assert any("суцільним полотном" in warning for warning in result.warnings)
+
+
+def test_long_document_without_headings_is_flagged_for_review():
+    def build(document):
+        document.add_paragraph("Перший звичайний абзац тексту. " * 10)
+        document.add_paragraph("Другий звичайний абзац тексту. " * 10)
+
+    result = parse_docx(_docx_bytes(build), "no-headings.docx")
+
+    assert all(block.role == "p" for block in result.blocks)
+    assert any("Заголовки не розпізнані" in warning for warning in result.warnings)
+
+
+def test_short_document_without_headings_is_not_flagged():
+    def build(document):
+        document.add_paragraph("Короткий текст без заголовка.")
+
+    result = parse_docx(_docx_bytes(build), "short.docx")
+
+    assert not any("полотном" in warning for warning in result.warnings)
+    assert not any("Заголовки не розпізнані" in warning for warning in result.warnings)
+
+
 def test_leroy_merlin_renderer_uses_required_markup():
     blocks = [
         Block(
