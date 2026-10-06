@@ -202,12 +202,6 @@ def _looks_like_unformatted_heading(text: str, next_text: str) -> bool:
 
 
 def _classify(blocks: list[Block]) -> None:
-    explicit_levels = [
-        block.explicit_heading_level
-        for block in blocks
-        if block.explicit_heading_level is not None
-    ]
-    minimum_level = min(explicit_levels) if explicit_levels else 1
     body_sizes = [
         block.max_font_size
         for block in blocks
@@ -217,7 +211,7 @@ def _classify(blocks: list[Block]) -> None:
 
     for position, block in enumerate(blocks):
         if block.explicit_heading_level is not None:
-            html_level = min(4, 2 + block.explicit_heading_level - minimum_level)
+            html_level = min(4, max(2, block.explicit_heading_level))
             block.role = f"h{html_level}"
             block.confidence = 0.99
             block.reason = f"Стиль заголовка Word, рівень {block.explicit_heading_level}"

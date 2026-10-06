@@ -44,7 +44,7 @@ def _add_hyperlink(paragraph, text: str, url: str) -> None:
     paragraph._p.append(hyperlink)
 
 
-def test_heading_levels_are_normalized_from_smallest_word_level():
+def test_word_heading_two_and_three_keep_their_html_levels():
     def build(document):
         document.add_heading("Основний розділ", level=2)
         document.add_paragraph("Звичайний текст статті, який має залишитися абзацом.")
@@ -53,6 +53,17 @@ def test_heading_levels_are_normalized_from_smallest_word_level():
     result = parse_docx(_docx_bytes(build), "article.docx")
 
     assert [block.role for block in result.blocks] == ["h2", "p", "h3"]
+
+
+def test_heading_three_stays_h3_when_document_contains_heading_one():
+    def build(document):
+        document.add_heading("Назва статті", level=1)
+        document.add_heading("Основний розділ", level=2)
+        document.add_heading("Нікель-метал-гідридні (Ni-MH)", level=3)
+
+    result = parse_docx(_docx_bytes(build), "batteries.docx")
+
+    assert [block.role for block in result.blocks] == ["h2", "h2", "h3"]
 
 
 def test_bold_inside_paragraph_is_not_rendered():
