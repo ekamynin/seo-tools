@@ -85,26 +85,111 @@ if process:
     progress.empty()
     st.session_state["content_publisher_results"] = results
     st.session_state["content_publisher_failures"] = failures
+    st.session_state["content_publisher_total_files"] = len(uploaded_files)
 
 results = st.session_state.get("content_publisher_results", [])
 failures = st.session_state.get("content_publisher_failures", [])
+total_files = st.session_state.get(
+    "content_publisher_total_files",
+    len(results) + len(failures),
+)
 
-for failure in failures:
-    st.error(f"❌ {failure}")
+if results or failures:
+    st.divider()
+    summary_rows = []
+    result_statuses = []
+    for result in results:
+        fragment = render_html(result.blocks, profile)
+        validation_errors = validate_html(fragment, profile)
+        uncertain_count = sum(1 for block in result.blocks if block.confidence < 0.7)
+        problems = [*result.warnings, *validation_errors]
+        if validation_errors:
+            status = "❌ Помилка HTML"
+        elif uncertain_count:
+            status = "⚠️ Перевірити"
+        elif problems:
+            status = "🟡 Зауваження"
+        else:
+            status = "✅ Готово"
+        result_statuses.append(status)
+        summary_rows.append(
+            {
+                "Статус": status,
+                "Файл": result.filename,
+                "Блоків": len(result.blocks),
+                "Заголовків": sum(
+                    1 for block in result.blocks if block.role.startswith("h")
+                ),
+                "Списків": sum(
+                    1 for block in result.blocks if block.role in ("ul", "ol")
+                ),
+                "Посилань": sum(
+                    1
+                    for block in result.blocks
+                    for part in block.parts
+                    if part.href
+                ),
+                "Проблеми": " ".join(problems) if problems else "—",
+            }
+        )
+
+    for failure in failures:
+        filename, _, error = failure.partition(":")
+        summary_rows.append(
+            {
+                "Статус": "❌ Не оброблено",
+                "Файл": filename,
+                "Блоків": 0,
+                "Заголовків": 0,
+                "Списків": 0,
+                "Посилань": 0,
+                "Проблеми": error.strip() or failure,
+            }
+        )
+
+    ready_count = sum(status == "✅ Готово" for status in result_statuses)
+    problem_count = len(summary_rows) - ready_count
+    metric1, metric2, metric3, metric4 = st.columns(4)
+    metric1.metric("Завантажено", total_files)
+    metric2.metric("Оброблено", len(results) + len(failures))
+    metric3.metric("Готово", ready_count)
+    metric4.metric("З проблемами", problem_count)
+
+    st.markdown("### Зведена по документах")
+    st.dataframe(
+        pd.DataFrame(summary_rows),
+        hide_index=True,
+        use_container_width=True,
+        height=min(600, 38 * len(summary_rows) + 40),
+        column_config={
+            "Статус": st.column_config.TextColumn("Статус", width="medium"),
+            "Файл": st.column_config.TextColumn("Файл", width="large"),
+            "Блоків": st.column_config.NumberColumn("Блоків", width="small"),
+            "Заголовків": st.column_config.NumberColumn("Заголовків", width="small"),
+            "Списків": st.column_config.NumberColumn("Списків", width="small"),
+            "Посилань": st.column_config.NumberColumn("Посилань", width="small"),
+            "Проблеми": st.column_config.TextColumn("Проблеми", width="large"),
+        },
+    )
 
 if results:
     st.divider()
-    warning_count = sum(len(result.warnings) for result in results)
-    metric1, metric2, metric3 = st.columns(3)
-    metric1.metric("Документів", len(results))
-    metric2.metric("Блоків", sum(len(result.blocks) for result in results))
-    metric3.metric("Попереджень", warning_count)
+    default_index = next(
+        (index for index, status in enumerate(result_statuses) if status != "✅ Готово"),
+        0,
+    )
+    selected_position = st.selectbox(
+        "Документ для перегляду",
+        options=list(range(len(results))),
+        index=default_index,
+        format_func=lambda index: results[index].filename,
+    )
+    result = results[selected_position]
 
-    for position, result in enumerate(results):
-        with st.expander(f"📄 {result.filename}", expanded=len(results) == 1):
-            for warning in result.warnings:
-                st.warning(warning)
+    for warning in result.warnings:
+        st.warning(warning)
 
+    with st.expander("Налаштувати структуру документа"):
             rows = [
                 {
                     "#": block.index,
@@ -117,7 +202,7 @@ if results:
             ]
             edited = st.data_editor(
                 pd.DataFrame(rows),
-                key=_result_key(result.filename, position),
+                key=_result_key(result.filename, selected_position),
                 hide_index=True,
                 use_container_width=True,
                 disabled=["#", "Текст", "Упевненість", "Чому"],
@@ -138,39 +223,39 @@ if results:
             for block, role in zip(result.blocks, edited["Тип"].tolist()):
                 block.role = role if role in ROLE_OPTIONS else "p"
 
-            fragment = render_html(result.blocks, profile)
-            validation_errors = validate_html(fragment, profile)
-            for error in validation_errors:
-                st.error(f"Перевірка HTML: {error}")
+    fragment = render_html(result.blocks, profile)
+    validation_errors = validate_html(fragment, profile)
+    for error in validation_errors:
+        st.error(f"Перевірка HTML: {error}")
 
-            preview_tab, code_tab = st.tabs(["Перегляд", "HTML"])
-            with preview_tab:
-                preview = f"""
-                <style>
-                    html, body {{
-                        background: #ffffff !important;
-                        color: #202124 !important;
-                        font: 16px/1.55 Arial, sans-serif;
-                        padding: 4px 16px;
-                    }}
-                    h2, h3, h4 {{ margin: 1.1em 0 .45em; }}
-                    p {{ margin: .6em 0; }}
-                    a {{ color: #0b57d0 !important; }}
-                </style>
-                {fragment}
-                """
-                components.html(preview, height=360, scrolling=True)
-            with code_tab:
-                st.code(fragment, language="html", line_numbers=True)
+    preview_tab, code_tab = st.tabs(["Перегляд", "HTML"])
+    with preview_tab:
+        preview = f"""
+        <style>
+            html, body {{
+                background: #ffffff !important;
+                color: #202124 !important;
+                font: 16px/1.55 Arial, sans-serif;
+                padding: 4px 16px;
+            }}
+            h2, h3, h4 {{ margin: 1.1em 0 .45em; }}
+            p {{ margin: .6em 0; }}
+            a {{ color: #0b57d0 !important; }}
+        </style>
+        {fragment}
+        """
+        components.html(preview, height=420, scrolling=True)
+    with code_tab:
+        st.code(fragment, language="html", line_numbers=True)
 
-            st.download_button(
-                "⬇️ Завантажити DOCX з HTML-кодом",
-                data=build_docx(fragment),
-                file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key=f"download_{_result_key(result.filename, position)}_{profile}",
-                disabled=bool(validation_errors),
-            )
+    st.download_button(
+        "⬇️ Завантажити DOCX з HTML-кодом",
+        data=build_docx(fragment),
+        file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        key=f"download_{_result_key(result.filename, selected_position)}_{profile}",
+        disabled=bool(validation_errors),
+    )
 
     st.divider()
     zip_data = build_docx_zip(results, profile)
