@@ -20,6 +20,10 @@ class GoogleDocsError(RuntimeError):
     """A user-facing Google Docs download error."""
 
 
+class GoogleDocsAccessError(GoogleDocsError):
+    """The document is not exported because link access is unavailable."""
+
+
 def extract_google_doc_id(url: str) -> str:
     parsed = urlparse(url.strip())
     if parsed.scheme not in ("http", "https") or parsed.hostname != "docs.google.com":
@@ -85,7 +89,7 @@ def download_google_doc(url: str, max_size: int) -> tuple[bytes, str]:
 
     with response:
         if response.status_code in (401, 403, 404):
-            raise GoogleDocsError(
+            raise GoogleDocsAccessError(
                 "Немає доступу. Увімкніть «Усі, хто має посилання — читач»."
             )
         try:
@@ -97,7 +101,7 @@ def download_google_doc(url: str, max_size: int) -> tuple[bytes, str]:
 
         content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
         if content_type not in _DOCX_CONTENT_TYPES:
-            raise GoogleDocsError(
+            raise GoogleDocsAccessError(
                 "Google не віддав DOCX. Перевірте доступ до документа."
             )
 

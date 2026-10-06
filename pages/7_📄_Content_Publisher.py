@@ -14,6 +14,7 @@ from content_publisher import (
     validate_html,
 )
 from content_publisher.google_docs import (
+    GoogleDocsAccessError,
     GoogleDocsError,
     download_google_doc,
     extract_google_doc_links,
@@ -142,6 +143,7 @@ elif input_mode == "Google Docs":
     if process:
         results = []
         failures = []
+        access_failures = 0
         total_size = 0
         progress = st.progress(0.0, text="Завантажуємо Google Docs…")
         for position, link in enumerate(google_links):
@@ -153,6 +155,10 @@ elif input_mode == "Google Docs":
                     )
                 total_size += len(data)
                 results.append(parse_docx(data, filename))
+            except GoogleDocsAccessError as exc:
+                access_failures += 1
+                document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
+                failures.append(f"Google Doc {document_id[:10]}: {exc}")
             except Exception as exc:
                 document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
                 failures.append(f"Google Doc {document_id[:10]}: {exc}")
@@ -164,6 +170,7 @@ elif input_mode == "Google Docs":
         st.session_state["content_publisher_results"] = results
         st.session_state["content_publisher_failures"] = failures
         st.session_state["content_publisher_total_files"] = len(google_links)
+        st.session_state["content_publisher_access_failures"] = access_failures
         st.session_state["content_publisher_source_mode"] = input_mode
 else:
     st.markdown("**Скопіюйте та вставте текст**")
@@ -207,6 +214,17 @@ total_files = st.session_state.get(
     "content_publisher_total_files",
     len(results) + len(failures),
 )
+
+if input_mode == "Google Docs" and same_mode:
+    access_failure_count = st.session_state.get(
+        "content_publisher_access_failures", 0
+    )
+    if access_failure_count:
+        st.error(
+            f"Недоступних документів: {access_failure_count} із {total_files}. "
+            "Увімкніть для них режим «Усі, хто має посилання — читач» "
+            "та запустіть обробку ще раз."
+        )
 
 if (results or failures) and input_mode in ("DOCX-файли", "Google Docs"):
     st.divider()

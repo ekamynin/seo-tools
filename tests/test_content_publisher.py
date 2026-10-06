@@ -9,6 +9,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE
 
 from content_publisher.models import Block, DocumentResult, InlinePart
 from content_publisher.google_docs import (
+    GoogleDocsAccessError,
     GoogleDocsError,
     download_google_doc,
     extract_google_doc_id,
@@ -206,10 +207,10 @@ def test_google_doc_download_rejects_non_docx_response():
     with patch("content_publisher.google_docs.requests.get", return_value=response):
         try:
             download_google_doc("https://docs.google.com/document/d/abc/edit", 100)
-        except GoogleDocsError as exc:
+        except GoogleDocsAccessError as exc:
             assert "не віддав DOCX" in str(exc)
         else:
-            raise AssertionError("Expected GoogleDocsError")
+            raise AssertionError("Expected GoogleDocsAccessError")
 
 
 def test_leroy_merlin_renderer_uses_required_markup():
