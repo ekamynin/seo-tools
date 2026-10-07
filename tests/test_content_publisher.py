@@ -15,7 +15,7 @@ from content_publisher.google_docs import (
     extract_google_doc_id,
     extract_google_doc_links,
 )
-from content_publisher.parser import parse_docx
+from content_publisher.parser import UnsafeDocxError, parse_docx
 from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
 from content_publisher.text_parser import parse_plain_text, parse_rich_text
 
@@ -183,6 +183,43 @@ def test_google_docs_links_are_extracted_from_markdown_and_deduplicated():
     assert extract_google_doc_links(text) == [first, second]
     assert extract_google_doc_id(first) == "abc_123"
     assert extract_google_doc_id(second) == "xyz-789"
+
+
+def test_concatenated_google_docs_links_are_extracted_separately():
+    first = "https://docs.google.com/document/d/first_123/edit?tab=t.0"
+    second = "https://docs.google.com/document/d/second-456/edit?tab=t.0"
+
+    assert extract_google_doc_links(first + second) == [first, second]
+
+
+def test_google_docs_duplicates_are_removed_by_document_id():
+    first = "https://docs.google.com/document/d/same_123/edit?tab=t.0"
+    duplicate = "https://docs.google.com/document/u/0/d/same_123/edit?usp=sharing"
+
+    assert extract_google_doc_links(f"{first}\n{duplicate}") == [first]
+
+
+def test_fake_or_corrupted_docx_is_rejected_before_parsing():
+    try:
+        parse_docx(b"this is not a docx", "fake.docx")
+    except UnsafeDocxError as exc:
+        assert "DOCX" in str(exc)
+    else:
+        raise AssertionError("Expected UnsafeDocxError")
+
+
+def test_suspiciously_compressed_docx_is_rejected():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types />")
+        archive.writestr("word/document.xml", "A" * (1024 * 1024))
+
+    try:
+        parse_docx(output.getvalue(), "bomb.docx")
+    except UnsafeDocxError as exc:
+        assert "стиснення" in str(exc)
+    else:
+        raise AssertionError("Expected UnsafeDocxError")
 
 
 def test_google_doc_download_checks_type_size_and_filename():

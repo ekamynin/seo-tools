@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import zipfile
 from statistics import median
 
 from docx import Document
@@ -20,6 +21,55 @@ _HEADING_ID_RE = re.compile(r"heading([1-9])", re.IGNORECASE)
 _TERMINAL_PUNCTUATION_RE = re.compile(r"[.!;:,…]$")
 _LONG_SINGLE_BLOCK_THRESHOLD = 300
 _LONG_DOCUMENT_THRESHOLD = 500
+_MAX_DOCX_ENTRIES = 2_000
+_MAX_DOCX_UNCOMPRESSED_SIZE = 50 * 1024 * 1024
+_MAX_DOCUMENT_XML_SIZE = 8 * 1024 * 1024
+_MAX_COMPRESSION_RATIO = 200
+
+
+class UnsafeDocxError(ValueError):
+    """The uploaded file is not a safe, readable DOCX archive."""
+
+
+def _validate_docx_archive(data: bytes) -> None:
+    """Reject malformed, encrypted, or suspiciously compressed DOCX files."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+            names = {entry.filename for entry in entries}
+
+            if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+                raise UnsafeDocxError("Файл не має коректної структури DOCX.")
+            if len(entries) > _MAX_DOCX_ENTRIES:
+                raise UnsafeDocxError("DOCX містить забагато внутрішніх файлів.")
+
+            total_size = 0
+            for entry in entries:
+                if entry.flag_bits & 0x1:
+                    raise UnsafeDocxError("Захищені паролем DOCX не підтримуються.")
+                path_parts = entry.filename.replace("\\", "/").split("/")
+                if entry.filename.startswith(("/", "\\")) or ".." in path_parts:
+                    raise UnsafeDocxError("DOCX містить небезпечні шляхи файлів.")
+
+                total_size += entry.file_size
+                if total_size > _MAX_DOCX_UNCOMPRESSED_SIZE:
+                    raise UnsafeDocxError(
+                        "DOCX завеликий після розпакування (ліміт 50 МБ)."
+                    )
+                if (
+                    entry.compress_size > 0
+                    and entry.file_size / entry.compress_size > _MAX_COMPRESSION_RATIO
+                ):
+                    raise UnsafeDocxError("DOCX має підозріло високий рівень стиснення.")
+
+            document_xml = archive.getinfo("word/document.xml")
+            if document_xml.file_size > _MAX_DOCUMENT_XML_SIZE:
+                raise UnsafeDocxError("Текстова частина DOCX перевищує безпечний ліміт.")
+    except UnsafeDocxError:
+        raise
+    except (zipfile.BadZipFile, KeyError, OSError) as exc:
+        raise UnsafeDocxError("Файл пошкоджений або не є справжнім DOCX.") from exc
 
 
 def _iter_document_blocks(document: _Document):
@@ -277,6 +327,7 @@ def _append_structure_warnings(result: DocumentResult) -> None:
 def parse_docx(data: bytes, filename: str) -> DocumentResult:
     """Parse a DOCX into semantic blocks without changing its wording."""
 
+    _validate_docx_archive(data)
     document = Document(io.BytesIO(data))
     result = DocumentResult(filename=filename)
     table_count = 0

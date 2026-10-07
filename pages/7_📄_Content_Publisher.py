@@ -31,6 +31,8 @@ st.set_page_config(
 MAX_FILES = 50
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_BATCH_SIZE = 100 * 1024 * 1024
+MAX_PASTED_TEXT_CHARS = 500_000
+MAX_PASTED_HTML_SIZE = 2 * 1024 * 1024
 ROLE_OPTIONS = ["p", "h2", "h3", "h4", "ul", "ol"]
 
 
@@ -190,7 +192,17 @@ else:
     )
     pasted_html = pasted_html or ""
     pasted_text = BeautifulSoup(pasted_html, "html.parser").get_text(" ", strip=True)
+    pasted_html_size = len(pasted_html.encode("utf-8"))
+    pasted_too_large = (
+        len(pasted_text) > MAX_PASTED_TEXT_CHARS
+        or pasted_html_size > MAX_PASTED_HTML_SIZE
+    )
     st.caption(f"Символів: {len(pasted_text):,}".replace(",", " "))
+    if pasted_too_large:
+        st.error(
+            "Вставлений текст завеликий. Ліміт: 500 000 символів "
+            "або 2 МБ HTML. Розділіть його на кілька частин."
+        )
     st.caption(
         "Зберігаємо структуру з Google Docs, а зайве візуальне "
         "форматування у готовому HTML видаляємо."
@@ -199,7 +211,7 @@ else:
         "⚙️ Перетворити текст",
         type="primary",
         use_container_width=True,
-        disabled=not pasted_text.strip(),
+        disabled=not pasted_text.strip() or pasted_too_large,
     )
     if process:
         st.session_state["content_publisher_results"] = [parse_rich_text(pasted_html)]

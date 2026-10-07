@@ -7,7 +7,12 @@ from urllib.parse import unquote, urlparse
 import requests
 
 
-_URL_RE = re.compile(r"https?://[^\s|<>\[\]()]+", re.IGNORECASE)
+_GOOGLE_DOC_URL_RE = re.compile(
+    r"https?://docs\.google\.com/document/(?:u/\d+/)?d/[A-Za-z0-9_-]+"
+    r"(?:(?!https?://)[^\s|<>\[\]()])*"
+    r"(?=https?://|[\s|<>\[\]()]|$)",
+    re.IGNORECASE,
+)
 _DOC_PATH_RE = re.compile(r"^/document/(?:u/\d+/)?d/([A-Za-z0-9_-]+)")
 _SAFE_FILENAME_RE = re.compile(r"[^\w. -]+", re.UNICODE)
 _DOCX_CONTENT_TYPES = {
@@ -39,7 +44,8 @@ def extract_google_doc_links(text: str) -> list[str]:
 
     links: list[str] = []
     seen_ids: set[str] = set()
-    for candidate in _URL_RE.findall(text):
+    for match in _GOOGLE_DOC_URL_RE.finditer(text):
+        candidate = match.group(0)
         candidate = candidate.rstrip(".,;:!?'")
         try:
             document_id = extract_google_doc_id(candidate)
