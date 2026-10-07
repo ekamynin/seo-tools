@@ -82,6 +82,63 @@ def _iter_document_blocks(document: _Document):
             yield Table(child, document)
 
 
+def _story_has_content(story) -> bool:
+    return bool(story.tables) or any(
+        paragraph.text.strip() for paragraph in story.paragraphs
+    )
+
+
+def _append_unsupported_content_warnings(
+    document: _Document,
+    result: DocumentResult,
+) -> None:
+    stories = []
+    seen_parts: set[str] = set()
+    for section in document.sections:
+        for story in (
+            section.header,
+            section.first_page_header,
+            section.even_page_header,
+            section.footer,
+            section.first_page_footer,
+            section.even_page_footer,
+        ):
+            part_name = str(story.part.partname)
+            if part_name in seen_parts:
+                continue
+            seen_parts.add(part_name)
+            stories.append(story)
+    if any(_story_has_content(story) for story in stories):
+        result.warnings.append(
+            "Знайдено текст або таблиці в колонтитулах. "
+            "Колонтитули не додано до HTML."
+        )
+
+    part_names = {str(part.partname) for part in document.part.package.parts}
+    if any(name.endswith("/comments.xml") for name in part_names):
+        result.warnings.append("Знайдено примітки Word. Примітки не додано до HTML.")
+    if any(
+        name.endswith(("/footnotes.xml", "/endnotes.xml")) for name in part_names
+    ):
+        result.warnings.append("Знайдено виноски. Виноски не додано до HTML.")
+
+    body = document.element.body
+    if any(True for _ in body.iter(qn("w:txbxContent"))):
+        result.warnings.append(
+            "Знайдено текстові поля. Їхній вміст може відобразитися некоректно."
+        )
+    if any(True for _ in body.iter(qn("wp:anchor"))):
+        result.warnings.append(
+            "Знайдено плаваючі об’єкти або зображення. Їх не додано до HTML."
+        )
+    if any(True for _ in body.iter(qn("w:ins"))) or any(
+        True for _ in body.iter(qn("w:del"))
+    ):
+        result.warnings.append(
+            "Знайдено режим виправлень Word. Перевірте фінальний текст."
+        )
+
+
 def _xml_run_text(run_element) -> str:
     chunks: list[str] = []
     for node in run_element.iter():
@@ -366,6 +423,13 @@ def parse_docx(data: bytes, filename: str) -> DocumentResult:
         result.warnings.append(
             f"Знайдено зображень: {image_count}. У першій версії зображення пропущено."
         )
+    manual_break_count = sum("\n" in block.text for block in result.blocks)
+    if manual_break_count:
+        result.warnings.append(
+            f"Знайдено абзаців із ручними переносами Shift+Enter: "
+            f"{manual_break_count}. Перевірте їхню структуру в HTML."
+        )
+    _append_unsupported_content_warnings(document, result)
     if not result.blocks:
         result.warnings.append("Не знайдено текстових абзаців для конвертації.")
 

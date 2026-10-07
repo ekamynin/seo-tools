@@ -11,13 +11,14 @@ from content_publisher import (
     build_docx_zip,
     parse_docx,
     render_html,
+    safe_output_name,
     validate_html,
 )
 from content_publisher.google_docs import (
     GoogleDocsAccessError,
     GoogleDocsError,
+    analyze_google_doc_links,
     download_google_doc,
-    extract_google_doc_links,
 )
 from content_publisher.text_parser import parse_rich_text
 
@@ -33,16 +34,64 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_BATCH_SIZE = 100 * 1024 * 1024
 MAX_PASTED_TEXT_CHARS = 500_000
 MAX_PASTED_HTML_SIZE = 2 * 1024 * 1024
+MAX_GOOGLE_LINK_TEXT_CHARS = 100_000
 ROLE_OPTIONS = ["p", "h2", "h3", "h4", "ul", "ol"]
 PROCESSING_KEY = "content_publisher_processing"
+PROCESSED_INPUT_KEY = "content_publisher_processed_input"
+RESULT_STATE_KEYS = (
+    "content_publisher_results",
+    "content_publisher_failures",
+    "content_publisher_total_files",
+    "content_publisher_access_failures",
+    "content_publisher_source_mode",
+    PROCESSED_INPUT_KEY,
+)
 
 
-def _result_key(filename: str, position: int) -> str:
-    digest = hashlib.sha1(f"{position}:{filename}".encode()).hexdigest()[:10]
+def _result_key(result, position: int) -> str:
+    source_structure = "\x1f".join(
+        f"{block.text}\x1e{block.explicit_heading_level}\x1e{block.style_name}"
+        for block in result.blocks
+    )
+    digest = hashlib.sha1(
+        f"{position}:{result.filename}:{source_structure}".encode()
+    ).hexdigest()[:12]
     return f"content_blocks_{digest}"
 
 
+def _clear_result_state() -> None:
+    for key in RESULT_STATE_KEYS:
+        st.session_state.pop(key, None)
+    for key in list(st.session_state):
+        if str(key).startswith("content_blocks_"):
+            st.session_state.pop(key, None)
+
+
+def _input_signature(mode: str, value: str) -> str:
+    digest = hashlib.sha1(value.encode()).hexdigest()
+    return f"{mode}:{digest}"
+
+
+def _uploaded_files_signature(uploaded_files) -> str:
+    identifiers = []
+    for uploaded in uploaded_files:
+        file_id = getattr(uploaded, "file_id", None)
+        if file_id:
+            identifier = str(file_id)
+        else:
+            identifier = hashlib.sha1(uploaded.getvalue()).hexdigest()
+        identifiers.append(f"{uploaded.name}:{uploaded.size}:{identifier}")
+    return _input_signature("DOCX-файли", "\x1f".join(identifiers))
+
+
+def _clear_stale_results(current_signature: str) -> None:
+    previous_signature = st.session_state.get(PROCESSED_INPUT_KEY)
+    if previous_signature and previous_signature != current_signature:
+        _clear_result_state()
+
+
 def _start_processing() -> None:
+    _clear_result_state()
     st.session_state[PROCESSING_KEY] = True
 
 
@@ -85,6 +134,8 @@ if input_mode == "DOCX-файли":
         accept_multiple_files=True,
         help=f"До {MAX_FILES} файлів, максимум 10 МБ кожен і 100 МБ на всю пачку.",
     )
+    current_input_signature = _uploaded_files_signature(uploaded_files)
+    _clear_stale_results(current_input_signature)
 
     if len(uploaded_files) > MAX_FILES:
         st.error(f"Можна обробити не більше {MAX_FILES} файлів за один запуск.")
@@ -134,6 +185,7 @@ if input_mode == "DOCX-файли":
             st.session_state["content_publisher_failures"] = failures
             st.session_state["content_publisher_total_files"] = len(uploaded_files)
             st.session_state["content_publisher_source_mode"] = input_mode
+            st.session_state[PROCESSED_INPUT_KEY] = current_input_signature
         finally:
             _finish_processing()
         st.rerun()
@@ -141,16 +193,33 @@ elif input_mode == "Google Docs":
     links_text = st.text_area(
         "Вставте посилання Google Docs",
         height=180,
+        max_chars=MAX_GOOGLE_LINK_TEXT_CHARS,
         placeholder=(
             "Кожне посилання з нового рядка. Можна також вставити "
             "скопійовану колонку з Google Sheets."
         ),
     )
-    google_links = extract_google_doc_links(links_text)
+    current_input_signature = _input_signature(input_mode, links_text)
+    _clear_stale_results(current_input_signature)
+    link_analysis = analyze_google_doc_links(links_text)
+    google_links = link_analysis.links
     st.caption(
-        f"Знайдено документів: {len(google_links)}. "
+        f"Знайдено: {len(google_links)}; "
+        f"дублів прибрано: {link_analysis.duplicate_count}; "
+        f"нерозпізнаних URL: {link_analysis.invalid_count}. "
         "Доступ: «Усі, хто має посилання — читач»."
     )
+    links_text_too_large = len(links_text) > MAX_GOOGLE_LINK_TEXT_CHARS
+    if links_text_too_large:
+        st.error(
+            "Поле з посиланнями завелике. "
+            "Ліміт: 100 000 символів."
+        )
+    if link_analysis.invalid_count:
+        st.warning(
+            f"Пропущено нерозпізнаних або непідтримуваних URL: "
+            f"{link_analysis.invalid_count}. Перевірте вставлений список."
+        )
     too_many_links = len(google_links) > MAX_FILES
     if too_many_links:
         st.error(f"Можна обробити не більше {MAX_FILES} документів за один запуск.")
@@ -158,7 +227,12 @@ elif input_mode == "Google Docs":
         "⏳ Обробка триває…" if is_processing else "⚙️ Завантажити та обробити",
         type="primary",
         use_container_width=True,
-        disabled=is_processing or not google_links or too_many_links,
+        disabled=(
+            is_processing
+            or not google_links
+            or too_many_links
+            or links_text_too_large
+        ),
         on_click=_start_processing,
     )
     if process or is_processing:
@@ -194,6 +268,7 @@ elif input_mode == "Google Docs":
             st.session_state["content_publisher_total_files"] = len(google_links)
             st.session_state["content_publisher_access_failures"] = access_failures
             st.session_state["content_publisher_source_mode"] = input_mode
+            st.session_state[PROCESSED_INPUT_KEY] = current_input_signature
         finally:
             _finish_processing()
         st.rerun()
@@ -214,8 +289,15 @@ else:
         key="content_publisher_rich_text",
     )
     pasted_html = pasted_html or ""
-    pasted_text = BeautifulSoup(pasted_html, "html.parser").get_text(" ", strip=True)
+    current_input_signature = _input_signature(input_mode, pasted_html)
+    _clear_stale_results(current_input_signature)
     pasted_html_size = len(pasted_html.encode("utf-8"))
+    if pasted_html_size <= MAX_PASTED_HTML_SIZE:
+        pasted_text = BeautifulSoup(pasted_html, "html.parser").get_text(
+            " ", strip=True
+        )
+    else:
+        pasted_text = ""
     pasted_too_large = (
         len(pasted_text) > MAX_PASTED_TEXT_CHARS
         or pasted_html_size > MAX_PASTED_HTML_SIZE
@@ -245,6 +327,7 @@ else:
             st.session_state["content_publisher_failures"] = []
             st.session_state["content_publisher_total_files"] = 1
             st.session_state["content_publisher_source_mode"] = input_mode
+            st.session_state[PROCESSED_INPUT_KEY] = current_input_signature
         finally:
             _finish_processing()
         st.rerun()
@@ -256,6 +339,12 @@ total_files = st.session_state.get(
     "content_publisher_total_files",
     len(results) + len(failures),
 )
+
+if results or failures:
+    if profile == "leroy_merlin":
+        st.info("🟢 Профіль HTML: Leroy Merlin")
+    else:
+        st.info("🔵 Профіль HTML: звичайний")
 
 if input_mode == "Google Docs" and same_mode:
     access_failure_count = st.session_state.get(
@@ -380,7 +469,7 @@ if results:
             ]
             edited = st.data_editor(
                 pd.DataFrame(rows),
-                key=_result_key(result.filename, selected_position),
+                key=_result_key(result, selected_position),
                 hide_index=True,
                 use_container_width=True,
                 disabled=["#", "Текст", "Упевненість", "Чому"],
@@ -431,9 +520,9 @@ if results:
         st.download_button(
             "⬇️ Завантажити DOCX з HTML-кодом",
             data=build_docx(fragment),
-            file_name=f"{result.filename.rsplit('.', 1)[0]}_HTML.docx",
+            file_name=safe_output_name(result.filename),
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key=f"download_{_result_key(result.filename, selected_position)}_{profile}",
+            key=f"download_{_result_key(result, selected_position)}_{profile}",
             disabled=bool(validation_errors),
         )
 

@@ -11,12 +11,19 @@ from content_publisher.models import Block, DocumentResult, InlinePart
 from content_publisher.google_docs import (
     GoogleDocsAccessError,
     GoogleDocsError,
+    analyze_google_doc_links,
     download_google_doc,
     extract_google_doc_id,
     extract_google_doc_links,
 )
 from content_publisher.parser import UnsafeDocxError, parse_docx
-from content_publisher.renderer import build_docx, build_docx_zip, render_html, validate_html
+from content_publisher.renderer import (
+    build_docx,
+    build_docx_zip,
+    render_html,
+    safe_output_name,
+    validate_html,
+)
 from content_publisher.text_parser import parse_plain_text, parse_rich_text
 
 
@@ -107,6 +114,27 @@ def test_long_single_paragraph_is_flagged_as_unstructured_canvas():
     assert any("суцільним полотном" in warning for warning in result.warnings)
 
 
+def test_manual_line_break_in_docx_is_flagged_for_review():
+    def build(document):
+        paragraph = document.add_paragraph("Перший рядок")
+        paragraph.add_run().add_break()
+        paragraph.add_run("Другий рядок")
+
+    result = parse_docx(_docx_bytes(build), "manual-break.docx")
+
+    assert any("Shift+Enter" in warning for warning in result.warnings)
+
+
+def test_header_content_is_flagged_as_unsupported():
+    def build(document):
+        document.add_paragraph("Основний текст")
+        document.sections[0].header.paragraphs[0].text = "Текст у колонтитулі"
+
+    result = parse_docx(_docx_bytes(build), "header.docx")
+
+    assert any("колонтитул" in warning.lower() for warning in result.warnings)
+
+
 def test_long_document_without_headings_is_flagged_for_review():
     def build(document):
         document.add_paragraph("Перший звичайний абзац тексту. " * 10)
@@ -175,6 +203,13 @@ def test_rich_text_uses_full_bold_short_paragraph_as_heading_signal():
     assert "<strong" not in render_html(result.blocks)
 
 
+def test_rich_text_manual_break_is_flagged_for_review():
+    result = parse_rich_text("<p>Перший рядок<br>Другий рядок</p>")
+
+    assert any("Shift+Enter" in warning for warning in result.warnings)
+    assert render_html(result.blocks) == "<p>Перший рядок Другий рядок</p>"
+
+
 def test_google_docs_links_are_extracted_from_markdown_and_deduplicated():
     first = "https://docs.google.com/document/d/abc_123/edit?tab=t.0"
     second = "https://docs.google.com/document/u/0/d/xyz-789/edit"
@@ -197,6 +232,20 @@ def test_google_docs_duplicates_are_removed_by_document_id():
     duplicate = "https://docs.google.com/document/u/0/d/same_123/edit?usp=sharing"
 
     assert extract_google_doc_links(f"{first}\n{duplicate}") == [first]
+
+
+def test_google_docs_input_reports_duplicates_and_invalid_urls():
+    first = "https://docs.google.com/document/d/first_123/edit"
+    duplicate = "https://docs.google.com/document/u/0/d/first_123/edit"
+    unsupported = "https://docs.google.com/spreadsheets/d/sheet_123/edit"
+
+    analysis = analyze_google_doc_links(
+        f"{first}\n{duplicate}\n{unsupported}"
+    )
+
+    assert analysis.links == [first]
+    assert analysis.duplicate_count == 1
+    assert analysis.invalid_count == 1
 
 
 def test_fake_or_corrupted_docx_is_rejected_before_parsing():
@@ -344,3 +393,12 @@ def test_batch_export_contains_docx_files_with_html_source():
     assert archive.namelist() == ["Стаття_HTML.docx"]
     exported = Document(io.BytesIO(archive.read("Стаття_HTML.docx")))
     assert exported.paragraphs[0].text == "<h2>Заголовок</h2>"
+
+
+def test_output_filename_is_sanitized_and_limited():
+    name = safe_output_name("../" + "Дуже_довга_назва" * 30 + "\x00.docx")
+
+    assert name.endswith("_HTML.docx")
+    assert "/" not in name
+    assert "\x00" not in name
+    assert len(name) <= 130

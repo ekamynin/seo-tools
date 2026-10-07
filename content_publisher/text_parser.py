@@ -26,6 +26,9 @@ def _rich_inline_parts(element: Tag) -> list[InlinePart]:
             return
         if not isinstance(node, Tag) or node.name in ("script", "style", "ul", "ol"):
             return
+        if node.name == "br":
+            raw_parts.append(InlinePart(" ", inherited_href))
+            return
         href = node.get("href") if node.name == "a" else inherited_href
         for child in node.children:
             walk(child, href)
@@ -101,6 +104,7 @@ def parse_rich_text(html: str, filename: str = "Вставлений текст"
 
     result = DocumentResult(filename=filename)
     soup = BeautifulSoup(html or "", "html.parser")
+    manual_break_count = len(soup.find_all("br"))
 
     def process(element: Tag) -> None:
         name = element.name.lower()
@@ -147,6 +151,11 @@ def parse_rich_text(html: str, filename: str = "Вставлений текст"
 
     if not result.blocks:
         result.warnings.append("Не знайдено тексту для конвертації.")
+    if manual_break_count:
+        result.warnings.append(
+            f"Знайдено ручних переносів Shift+Enter: {manual_break_count}. "
+            "Перевірте структуру перед копіюванням."
+        )
 
     for index, block in enumerate(result.blocks, start=1):
         block.index = index

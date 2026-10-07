@@ -117,8 +117,11 @@ def validate_html(fragment: str, profile: str = "default") -> list[str]:
     return errors
 
 
-def _output_name(source_name: str) -> str:
+def safe_output_name(source_name: str) -> str:
+    """Build a short, filesystem-safe DOCX output name."""
+
     stem = _UNSAFE_FILENAME_RE.sub("_", Path(source_name).stem).strip(" ._") or "document"
+    stem = stem[:120].rstrip(" ._") or "document"
     return f"{stem}_HTML.docx"
 
 
@@ -150,7 +153,7 @@ def build_docx_zip(results: list[DocumentResult], profile: str = "default") -> b
     used_names: set[str] = set()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for result in results:
-            base_name = _output_name(result.filename)
+            base_name = safe_output_name(result.filename)
             name = base_name
             suffix = 2
             while name.lower() in used_names:
