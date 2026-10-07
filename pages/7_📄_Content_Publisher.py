@@ -110,6 +110,7 @@ with st.sidebar:
     st.divider()
     leroy_mode = st.checkbox(
         "Текст для Leroy Merlin",
+        disabled=is_processing,
         help=(
             "Додає клієнтські атрибути до посилань і списків, зелений колір "
             "анкорів та <br><br> наприкінці абзаців."
@@ -125,6 +126,7 @@ input_mode = st.radio(
     "Додайте матеріал",
     ["DOCX-файли", "Google Docs", "Вставити текст"],
     horizontal=True,
+    disabled=is_processing,
 )
 
 if input_mode == "DOCX-файли":
@@ -132,6 +134,7 @@ if input_mode == "DOCX-файли":
         "Завантажте DOCX-файли",
         type=["docx"],
         accept_multiple_files=True,
+        disabled=is_processing,
         help=f"До {MAX_FILES} файлів, максимум 10 МБ кожен і 100 МБ на всю пачку.",
     )
     current_input_signature = _uploaded_files_signature(uploaded_files)
@@ -194,6 +197,7 @@ elif input_mode == "Google Docs":
         "Вставте посилання Google Docs",
         height=180,
         max_chars=MAX_GOOGLE_LINK_TEXT_CHARS,
+        disabled=is_processing,
         placeholder=(
             "Кожне посилання з нового рядка. Можна також вставити "
             "скопійовану колонку з Google Sheets."
@@ -286,6 +290,7 @@ else:
             [{"list": "ordered"}, {"list": "bullet"}],
             ["bold", "italic", "underline", "link", "clean"],
         ],
+        readonly=is_processing,
         key="content_publisher_rich_text",
     )
     pasted_html = pasted_html or ""
