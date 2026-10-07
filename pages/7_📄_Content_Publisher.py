@@ -34,11 +34,23 @@ MAX_BATCH_SIZE = 100 * 1024 * 1024
 MAX_PASTED_TEXT_CHARS = 500_000
 MAX_PASTED_HTML_SIZE = 2 * 1024 * 1024
 ROLE_OPTIONS = ["p", "h2", "h3", "h4", "ul", "ol"]
+PROCESSING_KEY = "content_publisher_processing"
 
 
 def _result_key(filename: str, position: int) -> str:
     digest = hashlib.sha1(f"{position}:{filename}".encode()).hexdigest()[:10]
     return f"content_blocks_{digest}"
+
+
+def _start_processing() -> None:
+    st.session_state[PROCESSING_KEY] = True
+
+
+def _finish_processing() -> None:
+    st.session_state[PROCESSING_KEY] = False
+
+
+is_processing = st.session_state.get(PROCESSING_KEY, False)
 
 
 st.title("📄 Content Publisher")
@@ -90,35 +102,41 @@ if input_mode == "DOCX-файли":
         )
 
     process = st.button(
-        "⚙️ Обробити документи",
+        "⏳ Обробка триває…" if is_processing else "⚙️ Обробити документи",
         type="primary",
         use_container_width=True,
         disabled=(
-            not uploaded_files
+            is_processing
+            or not uploaded_files
             or len(uploaded_files) > MAX_FILES
             or bool(oversized)
             or batch_too_large
         ),
+        on_click=_start_processing,
     )
 
-    if process:
-        results = []
-        failures = []
-        progress = st.progress(0.0, text="Читаємо документи…")
-        for position, uploaded in enumerate(uploaded_files):
-            try:
-                results.append(parse_docx(uploaded.getvalue(), uploaded.name))
-            except Exception as exc:
-                failures.append(f"{uploaded.name}: {exc}")
-            progress.progress(
-                (position + 1) / len(uploaded_files),
-                text=f"Оброблено {position + 1}/{len(uploaded_files)}",
-            )
-        progress.empty()
-        st.session_state["content_publisher_results"] = results
-        st.session_state["content_publisher_failures"] = failures
-        st.session_state["content_publisher_total_files"] = len(uploaded_files)
-        st.session_state["content_publisher_source_mode"] = input_mode
+    if process or is_processing:
+        try:
+            results = []
+            failures = []
+            progress = st.progress(0.0, text="Читаємо документи…")
+            for position, uploaded in enumerate(uploaded_files):
+                try:
+                    results.append(parse_docx(uploaded.getvalue(), uploaded.name))
+                except Exception as exc:
+                    failures.append(f"{uploaded.name}: {exc}")
+                progress.progress(
+                    (position + 1) / len(uploaded_files),
+                    text=f"Оброблено {position + 1}/{len(uploaded_files)}",
+                )
+            progress.empty()
+            st.session_state["content_publisher_results"] = results
+            st.session_state["content_publisher_failures"] = failures
+            st.session_state["content_publisher_total_files"] = len(uploaded_files)
+            st.session_state["content_publisher_source_mode"] = input_mode
+        finally:
+            _finish_processing()
+        st.rerun()
 elif input_mode == "Google Docs":
     links_text = st.text_area(
         "Вставте посилання Google Docs",
@@ -137,43 +155,48 @@ elif input_mode == "Google Docs":
     if too_many_links:
         st.error(f"Можна обробити не більше {MAX_FILES} документів за один запуск.")
     process = st.button(
-        "⚙️ Завантажити та обробити",
+        "⏳ Обробка триває…" if is_processing else "⚙️ Завантажити та обробити",
         type="primary",
         use_container_width=True,
-        disabled=not google_links or too_many_links,
+        disabled=is_processing or not google_links or too_many_links,
+        on_click=_start_processing,
     )
-    if process:
-        results = []
-        failures = []
-        access_failures = 0
-        total_size = 0
-        progress = st.progress(0.0, text="Завантажуємо Google Docs…")
-        for position, link in enumerate(google_links):
-            try:
-                data, filename = download_google_doc(link, MAX_FILE_SIZE)
-                if total_size + len(data) > MAX_BATCH_SIZE:
-                    raise GoogleDocsError(
-                        "Загальний розмір пачки перевищує 100 МБ."
-                    )
-                total_size += len(data)
-                results.append(parse_docx(data, filename))
-            except GoogleDocsAccessError as exc:
-                access_failures += 1
-                document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
-                failures.append(f"Google Doc {document_id[:10]}: {exc}")
-            except Exception as exc:
-                document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
-                failures.append(f"Google Doc {document_id[:10]}: {exc}")
-            progress.progress(
-                (position + 1) / len(google_links),
-                text=f"Оброблено {position + 1}/{len(google_links)}",
-            )
-        progress.empty()
-        st.session_state["content_publisher_results"] = results
-        st.session_state["content_publisher_failures"] = failures
-        st.session_state["content_publisher_total_files"] = len(google_links)
-        st.session_state["content_publisher_access_failures"] = access_failures
-        st.session_state["content_publisher_source_mode"] = input_mode
+    if process or is_processing:
+        try:
+            results = []
+            failures = []
+            access_failures = 0
+            total_size = 0
+            progress = st.progress(0.0, text="Завантажуємо Google Docs…")
+            for position, link in enumerate(google_links):
+                try:
+                    data, filename = download_google_doc(link, MAX_FILE_SIZE)
+                    if total_size + len(data) > MAX_BATCH_SIZE:
+                        raise GoogleDocsError(
+                            "Загальний розмір пачки перевищує 100 МБ."
+                        )
+                    total_size += len(data)
+                    results.append(parse_docx(data, filename))
+                except GoogleDocsAccessError as exc:
+                    access_failures += 1
+                    document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
+                    failures.append(f"Google Doc {document_id[:10]}: {exc}")
+                except Exception as exc:
+                    document_id = link.split("/d/", 1)[-1].split("/", 1)[0]
+                    failures.append(f"Google Doc {document_id[:10]}: {exc}")
+                progress.progress(
+                    (position + 1) / len(google_links),
+                    text=f"Оброблено {position + 1}/{len(google_links)}",
+                )
+            progress.empty()
+            st.session_state["content_publisher_results"] = results
+            st.session_state["content_publisher_failures"] = failures
+            st.session_state["content_publisher_total_files"] = len(google_links)
+            st.session_state["content_publisher_access_failures"] = access_failures
+            st.session_state["content_publisher_source_mode"] = input_mode
+        finally:
+            _finish_processing()
+        st.rerun()
 else:
     st.markdown("**Скопіюйте та вставте текст**")
     pasted_html = st_quill(
@@ -208,16 +231,23 @@ else:
         "форматування у готовому HTML видаляємо."
     )
     process = st.button(
-        "⚙️ Перетворити текст",
+        "⏳ Обробка триває…" if is_processing else "⚙️ Перетворити текст",
         type="primary",
         use_container_width=True,
-        disabled=not pasted_text.strip() or pasted_too_large,
+        disabled=is_processing or not pasted_text.strip() or pasted_too_large,
+        on_click=_start_processing,
     )
-    if process:
-        st.session_state["content_publisher_results"] = [parse_rich_text(pasted_html)]
-        st.session_state["content_publisher_failures"] = []
-        st.session_state["content_publisher_total_files"] = 1
-        st.session_state["content_publisher_source_mode"] = input_mode
+    if process or is_processing:
+        try:
+            st.session_state["content_publisher_results"] = [
+                parse_rich_text(pasted_html)
+            ]
+            st.session_state["content_publisher_failures"] = []
+            st.session_state["content_publisher_total_files"] = 1
+            st.session_state["content_publisher_source_mode"] = input_mode
+        finally:
+            _finish_processing()
+        st.rerun()
 
 same_mode = st.session_state.get("content_publisher_source_mode") == input_mode
 results = st.session_state.get("content_publisher_results", []) if same_mode else []
