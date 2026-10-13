@@ -374,26 +374,16 @@ with tools_col:
             st.caption("Застосована група: User-agent: " + ", ".join(group_agents))
 
 problem_count = len(errors) + len(warnings)
-if errors:
-    diagnostics_accent = "#ef4444"
-    diagnostics_background = "rgba(239,68,68,.055)"
-elif warnings:
-    diagnostics_accent = "#f59e0b"
-    diagnostics_background = "rgba(245,158,11,.05)"
-else:
-    diagnostics_accent = "rgba(128,128,128,.28)"
-    diagnostics_background = "rgba(128,128,128,.025)"
-
 st.markdown(
-    f"""
+    """
     <style>
-    div[data-testid="stExpander"] {{
-        border: 1px solid {diagnostics_accent};
-        background: {diagnostics_background};
-    }}
-    div[data-testid="stExpander"] summary p {{
+    div[data-testid="stExpander"] {
+        border: 1px solid rgba(128,128,128,.28);
+        background: rgba(128,128,128,.025);
+    }
+    div[data-testid="stExpander"] summary p {
         font-weight: 700;
-    }}
+    }
     </style>
     """,
     unsafe_allow_html=True,
