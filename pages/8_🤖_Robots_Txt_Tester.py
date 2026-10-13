@@ -7,7 +7,7 @@ from robots_checker import RobotsFetchError, analyze_robots, fetch_robots, test_
 
 st.set_page_config(
     page_title="Robots.txt Tester",
-    page_icon="🚦",
+    page_icon="🤖",
     layout="wide",
 )
 
@@ -112,7 +112,7 @@ def _render_line_breakdown(analysis, matched_line=None):
 if TEXT_KEY not in st.session_state:
     st.session_state[TEXT_KEY] = ""
 
-st.title("🚦 Robots.txt Tester")
+st.title("🤖 Robots.txt Tester")
 st.caption(
     "Завантажте robots.txt із сайту або вставте його вручну. "
     "Сервіс пояснить кожен рядок і перевірить доступність конкретного URL."

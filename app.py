@@ -108,9 +108,9 @@ with col7:
     st.page_link("pages/7_📄_Content_Publisher.py", label="Відкрити Content Publisher", icon="📄")
 
 with col8:
-    st.markdown("### 🚦 Robots.txt Tester")
+    st.markdown("### 🤖 Robots.txt Tester")
     st.markdown(
         "Аналізує robots.txt, пояснює правила та перевіряє "
         "доступність URL для вибраного робота."
     )
-    st.page_link("pages/8_🚦_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🚦")
+    st.page_link("pages/8_🤖_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🤖")
