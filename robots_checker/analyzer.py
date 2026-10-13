@@ -171,7 +171,18 @@ def analyze_robots(text: str, profile: str = "google") -> Analysis:
                 )
                 parsed.issues.append(issue)
             if not value:
-                issue = Issue(number, "info", f"Порожній {name.title()} не впливає на сканування.")
+                if name == "allow":
+                    issue = Issue(
+                        number,
+                        "warning",
+                        "Порожній Allow нічого не відкриває. Вкажіть шлях, наприклад Allow: /.",
+                    )
+                else:
+                    issue = Issue(
+                        number,
+                        "info",
+                        "Порожній Disallow нічого не блокує; сканування залишається дозволеним.",
+                    )
                 parsed.issues.append(issue)
         elif name == "sitemap":
             sitemaps.append(value)

@@ -126,6 +126,19 @@ def test_leading_wildcard_is_only_a_portability_warning_in_standard_mode():
     assert check_url(analysis, "/documents/report.pdf", "ExampleBot").allowed is False
 
 
+def test_empty_allow_is_visible_as_warning_but_empty_disallow_is_informational():
+    analysis = analyze_robots(
+        "User-agent: *\nAllow:\nDisallow:",
+        profile="google",
+    )
+
+    allow_issues = analysis.lines[1].issues
+    disallow_issues = analysis.lines[2].issues
+    assert any(issue.severity == "warning" for issue in allow_issues)
+    assert any("нічого не відкриває" in issue.message for issue in allow_issues)
+    assert all(issue.severity == "info" for issue in disallow_issues)
+
+
 def test_multiple_groups_for_same_agent_are_merged():
     analysis = analyze_robots(
         "User-agent: Googlebot\nDisallow: /one/\n"
