@@ -154,8 +154,21 @@ def analyze_robots(text: str, profile: str = "google") -> Analysis:
                 parsed.group_index = current_group.index
                 if value:
                     current_group.rules.append(Rule(name, value, number, current_group.index))
-            if value and not value.startswith("/"):
-                issue = Issue(number, "error", "Шлях у Allow або Disallow має починатися з «/».")
+            if value.startswith("*"):
+                severity = "warning" if profile == "standard" else "info"
+                issue = Issue(
+                    number,
+                    severity,
+                    "Початковий символ «*» підтримується Google і Bing. "
+                    "Для суворої відповідності RFC можна почати шаблон з «/*»."
+                )
+                parsed.issues.append(issue)
+            elif value and not value.startswith("/"):
+                issue = Issue(
+                    number,
+                    "error",
+                    "Шлях у Allow або Disallow має починатися з «/» або «*».",
+                )
                 parsed.issues.append(issue)
             if not value:
                 issue = Issue(number, "info", f"Порожній {name.title()} не впливає на сканування.")
@@ -249,7 +262,7 @@ def test_url(analysis: Analysis, target: str, user_agent: str) -> TestResult:
         rule
         for group in applicable
         for rule in group.rules
-        if rule.pattern.startswith("/") and _rule_regex(rule.pattern).search(path)
+        if _rule_regex(rule.pattern).search(path)
     ]
     if not matching_rules:
         return TestResult(

@@ -100,6 +100,32 @@ def test_wildcard_and_end_anchor_are_applied_to_path_and_query():
     assert check_url(analysis, "/catalog/public/child", "Googlebot").allowed is True
 
 
+def test_leading_wildcard_is_supported_for_google_and_matches_urls():
+    pattern = "*/f/*/*=*,*"
+    analysis = analyze_robots(
+        f"User-agent: *\nDisallow: {pattern}",
+        profile="google",
+    )
+
+    assert not [issue for issue in analysis.issues if issue.severity == "error"]
+    assert check_url(
+        analysis,
+        "/catalog/f/filter/brand=nike,adidas",
+        "Googlebot",
+    ).allowed is False
+
+
+def test_leading_wildcard_is_only_a_portability_warning_in_standard_mode():
+    analysis = analyze_robots(
+        "User-agent: *\nDisallow: *.pdf$",
+        profile="standard",
+    )
+
+    assert not [issue for issue in analysis.issues if issue.severity == "error"]
+    assert any(issue.severity == "warning" for issue in analysis.issues)
+    assert check_url(analysis, "/documents/report.pdf", "ExampleBot").allowed is False
+
+
 def test_multiple_groups_for_same_agent_are_merged():
     analysis = analyze_robots(
         "User-agent: Googlebot\nDisallow: /one/\n"
