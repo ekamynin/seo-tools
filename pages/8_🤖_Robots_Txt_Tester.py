@@ -153,31 +153,6 @@ st.markdown(
         font-size: 13px;
         line-height: 1.45;
     }
-    .robots-stats {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(70px, 1fr));
-        gap: 7px;
-        margin: .25rem 0 .8rem;
-    }
-    .robots-stat {
-        padding: 8px 9px;
-        border: 1px solid rgba(128,128,128,.22);
-        border-radius: 9px;
-        background: rgba(128,128,128,.055);
-    }
-    .robots-stat strong {
-        display: block;
-        font-size: 19px;
-        line-height: 1.15;
-    }
-    .robots-stat span {
-        color: #8a8f98;
-        font-size: 10px;
-        line-height: 1.2;
-    }
-    @media (max-width: 900px) {
-        .robots-stats { grid-template-columns: repeat(3, 1fr); }
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -291,26 +266,6 @@ matched_line = None
 
 with tools_col:
     st.markdown("#### Аналіз і перевірка")
-    st.markdown(
-        f"""
-        <div class="robots-stats">
-          <div class="robots-stat"><strong>{len(analysis.groups)}</strong><span>групи</span></div>
-          <div class="robots-stat"><strong>{len(analysis.rules)}</strong><span>правила</span></div>
-          <div class="robots-stat"><strong>{len(analysis.sitemaps)}</strong><span>sitemap</span></div>
-          <div class="robots-stat"><strong>{len(errors)}</strong><span>помилки</span></div>
-          <div class="robots-stat"><strong>{len(warnings)}</strong><span>попередження</span></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if errors:
-        st.error(f"Знайдено помилок: {len(errors)}. Деталі нижче.")
-    elif warnings:
-        st.warning(f"Критичних помилок немає. Попереджень: {len(warnings)}.")
-    else:
-        st.success("Синтаксичних проблем не знайдено.")
-
     st.markdown("##### Перевірити конкретний URL")
     target_url = st.text_input(
         "URL або шлях",
