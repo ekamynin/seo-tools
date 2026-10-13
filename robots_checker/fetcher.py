@@ -13,7 +13,16 @@ MAX_REDIRECTS = 5
 
 
 class RobotsFetchError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        url: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.url = url
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -89,11 +98,20 @@ def fetch_robots(value: str, timeout: float = 10.0) -> FetchResult:
 
         if response.status_code == 404:
             response.close()
-            raise RobotsFetchError("robots.txt не знайдено (HTTP 404). Для роботів це зазвичай означає відсутність обмежень.")
+            raise RobotsFetchError(
+                "robots.txt не знайдено (HTTP 404). Для роботів це зазвичай "
+                "означає відсутність обмежень.",
+                url=current_url,
+                status_code=404,
+            )
         if not 200 <= response.status_code < 300:
             status_code = response.status_code
             response.close()
-            raise RobotsFetchError(f"Сервер повернув HTTP {status_code} замість robots.txt.")
+            raise RobotsFetchError(
+                f"Сервер повернув HTTP {status_code} замість robots.txt.",
+                url=current_url,
+                status_code=status_code,
+            )
         content_type = response.headers.get("Content-Type", "").lower()
         if "text/html" in content_type:
             response.close()

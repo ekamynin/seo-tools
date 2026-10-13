@@ -153,7 +153,17 @@ if load_clicked:
         st.session_state[FETCH_KEY] = fetched
         st.rerun()
     except RobotsFetchError as exc:
-        st.error(str(exc))
+        if exc.status_code in {401, 403}:
+            st.warning(
+                f"Сайт заборонив автоматичне читання robots.txt "
+                f"з нашого сервера (HTTP {exc.status_code}). Це не означає, "
+                "що сайт закритий для пошукових роботів. Відкрийте файл "
+                "у браузері, скопіюйте текст і вставте його в поле нижче."
+            )
+            if exc.url:
+                st.link_button("🌐 Відкрити robots.txt у браузері", exc.url)
+        else:
+            st.error(str(exc))
 
 fetched = st.session_state.get(FETCH_KEY)
 if fetched:
@@ -165,6 +175,10 @@ if fetched:
         st.warning("Файл перевищує 500 КіБ. Аналізується лише частина, яку враховує Google.")
 
 st.markdown("### 2. Перевірте або відредагуйте правила")
+st.caption(
+    "Якщо сайт блокує автоматичне завантаження, скопіюйте вміст "
+    "robots.txt у браузері та вставте його сюди."
+)
 robots_text = st.text_area(
     "Вміст robots.txt",
     key=TEXT_KEY,

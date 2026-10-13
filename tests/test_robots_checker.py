@@ -1,10 +1,38 @@
-from robots_checker import analyze_robots, normalize_robots_url, test_url as check_url
+from unittest.mock import Mock, patch
+
+from robots_checker import (
+    RobotsFetchError,
+    analyze_robots,
+    fetch_robots,
+    normalize_robots_url,
+    test_url as check_url,
+)
 
 
 def test_normalize_domain_and_direct_robots_url():
     assert normalize_robots_url("example.com") == "https://example.com/robots.txt"
     assert normalize_robots_url("https://example.com/catalog") == "https://example.com/robots.txt"
     assert normalize_robots_url("https://example.com/robots.txt") == "https://example.com/robots.txt"
+
+
+def test_fetch_error_keeps_blocked_url_and_status_for_manual_fallback():
+    response = Mock(
+        status_code=403,
+        is_redirect=False,
+        is_permanent_redirect=False,
+        headers={},
+    )
+    with patch("robots_checker.fetcher._validate_public_host"), patch(
+        "robots_checker.fetcher.requests.get", return_value=response
+    ):
+        try:
+            fetch_robots("https://example.com/robots.txt")
+        except RobotsFetchError as exc:
+            assert exc.status_code == 403
+            assert exc.url == "https://example.com/robots.txt"
+            response.close.assert_called_once()
+        else:
+            raise AssertionError("Expected RobotsFetchError")
 
 
 def test_parser_builds_groups_and_reports_line_meanings():
