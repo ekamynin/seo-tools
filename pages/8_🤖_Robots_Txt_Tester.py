@@ -50,9 +50,10 @@ KIND_LABELS = {
 }
 
 
-def _render_line_breakdown(analysis, matched_line=None):
+def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
     rows = []
-    for line in analysis.lines:
+    lines = analysis.lines if visible_lines is None else visible_lines
+    for line in lines:
         severity = ""
         if any(issue.severity == "error" for issue in line.issues):
             severity = "error"
@@ -65,7 +66,11 @@ def _render_line_breakdown(analysis, matched_line=None):
             classes += " matched"
         label = KIND_LABELS.get(line.kind, "ДИРЕКТИВА")
         badges = f'<span class="robots-badge">{html.escape(label)}</span>' if label else ""
-        issue_text = " ".join(issue.message for issue in line.issues)
+        issue_text = " ".join(
+            issue.message
+            for issue in line.issues
+            if issue.severity in {"error", "warning"}
+        )
         details = line.explanation
         if issue_text:
             details += " " + issue_text
@@ -81,12 +86,12 @@ def _render_line_breakdown(analysis, matched_line=None):
     st.markdown(
         """
         <style>
-        .robots-shell { border: 1px solid rgba(128,128,128,.28); border-radius: 12px; overflow: hidden; }
-        .robots-row { display: grid; grid-template-columns: 44px minmax(260px, .9fr) minmax(340px, 1.25fr); min-height: 43px; border-bottom: 1px solid rgba(128,128,128,.18); align-items: stretch; }
+        .robots-shell { border: 1px solid rgba(128,128,128,.28); border-radius: 12px; max-height: 560px; overflow-y: auto; }
+        .robots-row { display: grid; grid-template-columns: 42px minmax(220px, .72fr) minmax(300px, 1.28fr); min-height: 38px; border-bottom: 1px solid rgba(128,128,128,.18); align-items: stretch; }
         .robots-row:last-child { border-bottom: 0; }
-        .robots-number { padding: 11px 10px; text-align: right; color: #8a8f98; background: rgba(128,128,128,.08); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
-        .robots-code { padding: 11px 14px; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; background: rgba(128,128,128,.035); font-size: 13px; }
-        .robots-meaning { padding: 10px 14px; font-size: 13px; line-height: 1.55; }
+        .robots-number { padding: 8px 9px; text-align: right; color: #8a8f98; background: rgba(128,128,128,.08); font: 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+        .robots-code { padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; background: rgba(128,128,128,.035); font-size: 13px; }
+        .robots-meaning { padding: 7px 12px; font-size: 12px; line-height: 1.5; }
         .robots-badge { display: inline-block; min-width: 78px; margin-right: 9px; padding: 2px 7px; border-radius: 999px; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .035em; background: rgba(128,128,128,.14); }
         .kind-user-agent .robots-code, .kind-user-agent .robots-badge { color: #8b5cf6; }
         .kind-disallow .robots-code, .kind-disallow .robots-badge { color: #ef4444; }
@@ -112,34 +117,66 @@ def _render_line_breakdown(analysis, matched_line=None):
 if TEXT_KEY not in st.session_state:
     st.session_state[TEXT_KEY] = ""
 
-st.title("🤖 Robots.txt Tester")
-st.caption(
-    "Завантажте robots.txt із сайту або вставте його вручну. "
-    "Сервіс пояснить кожен рядок і перевірить доступність конкретного URL."
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1480px;
+        padding-top: 1.25rem;
+        padding-bottom: 2rem;
+    }
+    h1 { margin-bottom: .15rem; }
+    div[data-testid="stTextArea"] textarea {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.45;
+    }
+    .robots-stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(70px, 1fr));
+        gap: 7px;
+        margin: .25rem 0 .8rem;
+    }
+    .robots-stat {
+        padding: 8px 9px;
+        border: 1px solid rgba(128,128,128,.22);
+        border-radius: 9px;
+        background: rgba(128,128,128,.055);
+    }
+    .robots-stat strong {
+        display: block;
+        font-size: 19px;
+        line-height: 1.15;
+    }
+    .robots-stat span {
+        color: #8a8f98;
+        font-size: 10px;
+        line-height: 1.2;
+    }
+    @media (max-width: 900px) {
+        .robots-stats { grid-template-columns: repeat(3, 1fr); }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.markdown("## ⚙️ Налаштування")
-    st.divider()
-    profile_label = st.selectbox(
-        "Правила пошуковика",
-        list(PROFILES),
-        help="Деякі необов'язкові директиви підтримуються пошуковиками по-різному.",
-    )
-    st.caption(
-        "robots.txt керує скануванням, але сам по собі не гарантує "
-        "видалення URL з індексу."
-    )
-    st.divider()
-    st.caption("Robots.txt Tester v0.1")
+st.title("🤖 Robots.txt Tester")
+st.caption(
+    "Аналізує robots.txt, пояснює правила та перевіряє доступність URL для вибраного робота."
+)
 
-st.markdown("### 1. Отримайте файл із сайту")
-source_col, button_col = st.columns([5, 1])
+source_col, profile_col, button_col = st.columns([4.5, 1.45, 1.35], vertical_alignment="bottom")
 with source_col:
     source_url = st.text_input(
         "Домен або URL robots.txt",
         placeholder="example.com або https://example.com/robots.txt",
-        label_visibility="collapsed",
+    )
+with profile_col:
+    profile_label = st.selectbox(
+        "Правила пошуковика",
+        list(PROFILES),
+        help="Деякі необов'язкові директиви підтримуються пошуковиками по-різному.",
     )
 with button_col:
     load_clicked = st.button("⬇️ Завантажити", type="primary", use_container_width=True)
@@ -168,87 +205,102 @@ if load_clicked:
 fetched = st.session_state.get(FETCH_KEY)
 if fetched:
     redirect_note = f" · редиректів: {len(fetched.redirects)}" if fetched.redirects else ""
-    st.success(
+    st.caption(
         f"Завантажено: HTTP {fetched.status_code} · {fetched.size:,} байт{redirect_note} · {fetched.final_url}".replace(",", " ")
     )
     if fetched.truncated:
         st.warning("Файл перевищує 500 КіБ. Аналізується лише частина, яку враховує Google.")
 
-st.markdown("### 2. Перевірте або відредагуйте правила")
-st.caption(
-    "Якщо сайт блокує автоматичне завантаження, скопіюйте вміст "
-    "robots.txt у браузері та вставте його сюди."
-)
-robots_text = st.text_area(
-    "Вміст robots.txt",
-    key=TEXT_KEY,
-    height=330,
-    placeholder=(
-        "User-agent: *\n"
-        "Disallow: /admin/\n"
-        "Allow: /admin/public/\n"
-        "Sitemap: https://example.com/sitemap.xml"
-    ),
-)
-
-st.download_button(
-    "💾 Завантажити поточний robots.txt",
-    data=robots_text.encode("utf-8"),
-    file_name="robots.txt",
-    mime="text/plain; charset=utf-8",
-    disabled=not robots_text.strip(),
-)
+editor_col, tools_col = st.columns([1.35, 1], gap="large")
+with editor_col:
+    st.markdown("#### Вміст robots.txt")
+    robots_text = st.text_area(
+        "Вміст robots.txt",
+        key=TEXT_KEY,
+        height=520,
+        label_visibility="collapsed",
+        placeholder=(
+            "User-agent: *\n"
+            "Disallow: /admin/\n"
+            "Allow: /admin/public/\n"
+            "Sitemap: https://example.com/sitemap.xml"
+        ),
+    )
+    st.download_button(
+        "💾 Завантажити поточний файл",
+        data=robots_text.encode("utf-8"),
+        file_name="robots.txt",
+        mime="text/plain; charset=utf-8",
+        disabled=not robots_text.strip(),
+        use_container_width=True,
+    )
 
 if not robots_text.strip():
-    st.info("Завантажте robots.txt із сайту або вставте його текст у поле вище.")
+    with tools_col:
+        st.markdown("#### Перевірка")
+        st.info(
+            "Завантажте robots.txt із сайту або вставте його текст у редактор. "
+            "Тут з'являться діагностика та перевірка конкретного URL."
+        )
     st.stop()
 
 analysis = analyze_robots(robots_text, PROFILES[profile_label])
 errors = [issue for issue in analysis.issues if issue.severity == "error"]
 warnings = [issue for issue in analysis.issues if issue.severity == "warning"]
+matched_line = None
 
-metric_cols = st.columns(5)
-metric_cols[0].metric("Групи роботів", len(analysis.groups))
-metric_cols[1].metric("Правила", len(analysis.rules))
-metric_cols[2].metric("Sitemap", len(analysis.sitemaps))
-metric_cols[3].metric("Помилки", len(errors))
-metric_cols[4].metric("Попередження", len(warnings))
+with tools_col:
+    st.markdown("#### Аналіз і перевірка")
+    st.markdown(
+        f"""
+        <div class="robots-stats">
+          <div class="robots-stat"><strong>{len(analysis.groups)}</strong><span>групи</span></div>
+          <div class="robots-stat"><strong>{len(analysis.rules)}</strong><span>правила</span></div>
+          <div class="robots-stat"><strong>{len(analysis.sitemaps)}</strong><span>sitemap</span></div>
+          <div class="robots-stat"><strong>{len(errors)}</strong><span>помилки</span></div>
+          <div class="robots-stat"><strong>{len(warnings)}</strong><span>попередження</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-if errors:
-    st.error(f"Знайдено помилок: {len(errors)}. Перевірте позначені рядки.")
-elif warnings:
-    st.warning(f"Критичних помилок немає, але є попередження: {len(warnings)}.")
-else:
-    st.success("Синтаксичних проблем не знайдено.")
+    if errors:
+        st.error(f"Знайдено помилок: {len(errors)}. Деталі нижче.")
+    elif warnings:
+        st.warning(f"Критичних помилок немає. Попереджень: {len(warnings)}.")
+    else:
+        st.success("Синтаксичних проблем не знайдено.")
 
-st.markdown("### 3. Перевірте конкретний URL")
-test_col, bot_col = st.columns([3, 2])
-with test_col:
+    st.markdown("##### Перевірити конкретний URL")
     target_url = st.text_input(
         "URL або шлях",
         placeholder="https://example.com/admin/page або /admin/page",
     )
-with bot_col:
     bot_label = st.selectbox("Робот", list(BOT_PRESETS))
+    user_agent = BOT_PRESETS[bot_label]
+    if bot_label == "Власний user-agent":
+        user_agent = st.text_input(
+            "Власний user-agent",
+            placeholder="Назва або повний user-agent робота",
+        )
 
-user_agent = BOT_PRESETS[bot_label]
-if bot_label == "Власний user-agent":
-    user_agent = st.text_input(
-        "Власний user-agent",
-        placeholder="Назва або повний user-agent робота",
-    )
+    result_signature = hash((robots_text, target_url, user_agent, profile_label))
+    if st.button("🔎 Перевірити URL", type="primary", use_container_width=True):
+        if not target_url.strip():
+            st.error("Вкажіть URL або шлях для перевірки.")
+        elif not user_agent.strip():
+            st.error("Вкажіть user-agent для перевірки.")
+        else:
+            result = test_url(analysis, target_url, user_agent)
+            st.session_state["robots_tester_last_result"] = result
+            st.session_state["robots_tester_last_signature"] = result_signature
 
-matched_line = None
-if st.button("🔎 Перевірити URL", use_container_width=True):
-    if not target_url.strip():
-        st.error("Вкажіть URL або шлях для перевірки.")
-    elif not user_agent.strip():
-        st.error("Вкажіть user-agent для перевірки.")
-    else:
-        result = test_url(analysis, target_url, user_agent)
+    result = None
+    if st.session_state.get("robots_tester_last_signature") == result_signature:
+        result = st.session_state.get("robots_tester_last_result")
+
+    if result:
         matched_line = result.matched_rule.line if result.matched_rule else None
-        st.session_state["robots_tester_last_match"] = matched_line
-        st.session_state["robots_tester_last_signature"] = hash(robots_text)
         if result.allowed:
             st.success(f"✅ Дозволено для {bot_label}. {result.reason}")
         else:
@@ -267,20 +319,51 @@ if st.button("🔎 Перевірити URL", use_container_width=True):
                 }
             )
             st.caption("Застосована група: User-agent: " + ", ".join(group_agents))
-elif st.session_state.get("robots_tester_last_signature") == hash(robots_text):
-    matched_line = st.session_state.get("robots_tester_last_match")
 
-st.markdown("### 4. Що означає кожен рядок")
-st.caption(
-    "Червоний — заборона, зелений — дозвіл, фіолетовий — група роботів. "
-    "Рамкою позначається правило, що спрацювало під час останньої перевірки URL."
-)
-_render_line_breakdown(analysis, matched_line)
+problem_count = len(errors) + len(warnings)
+with st.expander(
+    f"Построковий розбір · {len(analysis.lines)} рядків · {problem_count} проблем",
+    expanded=False,
+):
+    leading_wildcards = [
+        line
+        for line in analysis.lines
+        if line.name in {"allow", "disallow"} and line.value.startswith("*")
+    ]
+    if leading_wildcards and PROFILES[profile_label] in {"google", "bing"}:
+        st.caption(
+            f"{len(leading_wildcards)} правил починаються з «*». "
+            f"{profile_label} підтримує такі шаблони; це не помилка."
+        )
 
-with st.expander("Усі зауваження"):
-    if not analysis.issues:
-        st.write("Зауважень немає.")
-    for issue in analysis.issues:
-        location = f"Рядок {issue.line}: " if issue.line else ""
-        icon = {"error": "🔴", "warning": "🟡", "info": "🔵"}[issue.severity]
-        st.write(f"{icon} {location}{issue.message}")
+    only_problems = st.toggle(
+        "Показати лише помилки й попередження",
+        value=True,
+    )
+    if only_problems:
+        visible_lines = [
+            line
+            for line in analysis.lines
+            if any(issue.severity in {"error", "warning"} for issue in line.issues)
+            or line.number == matched_line
+        ]
+        if visible_lines:
+            _render_line_breakdown(analysis, matched_line, visible_lines)
+        else:
+            st.success("Помилок і попереджень немає.")
+    else:
+        visible_lines = [line for line in analysis.lines if line.kind != "blank"]
+        st.caption(
+            "Червоний — заборона, зелений — дозвіл, фіолетовий — група роботів. "
+            "Синя рамка позначає правило, що спрацювало для URL."
+        )
+        _render_line_breakdown(analysis, matched_line, visible_lines)
+
+    general_issues = [
+        issue
+        for issue in analysis.issues
+        if issue.severity in {"error", "warning"} and issue.line is None
+    ]
+    for issue in general_issues:
+        icon = "🔴" if issue.severity == "error" else "🟡"
+        st.write(f"{icon} {issue.message}")
