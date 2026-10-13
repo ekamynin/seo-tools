@@ -217,7 +217,7 @@ with editor_col:
     robots_text = st.text_area(
         "Вміст robots.txt",
         key=TEXT_KEY,
-        height=520,
+        height=410,
         label_visibility="collapsed",
         placeholder=(
             "User-agent: *\n"
@@ -321,10 +321,45 @@ with tools_col:
             st.caption("Застосована група: User-agent: " + ", ".join(group_agents))
 
 problem_count = len(errors) + len(warnings)
+if errors:
+    diagnostics_accent = "#ef4444"
+    diagnostics_background = "rgba(239,68,68,.055)"
+elif warnings:
+    diagnostics_accent = "#f59e0b"
+    diagnostics_background = "rgba(245,158,11,.05)"
+else:
+    diagnostics_accent = "#16a34a"
+    diagnostics_background = "rgba(22,163,74,.045)"
+
+st.markdown(
+    f"""
+    <style>
+    div[data-testid="stExpander"] {{
+        border: 1px solid {diagnostics_accent};
+        background: {diagnostics_background};
+    }}
+    div[data-testid="stExpander"] summary p {{
+        font-weight: 700;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+if problem_count:
+    breakdown_label = (
+        f"🔴 Помилки: {len(errors)} · "
+        f"🟡 Попередження: {len(warnings)} · "
+        "Відкрити построковий розбір"
+    )
+else:
+    breakdown_label = "✅ Проблем не знайдено · Відкрити построковий розбір"
+
 with st.expander(
-    f"Построковий розбір · {len(analysis.lines)} рядків · {problem_count} проблем",
+    breakdown_label,
     expanded=False,
 ):
+    st.caption(f"У файлі {len(analysis.lines)} рядків. Редактор прокручується окремо від сторінки.")
     leading_wildcards = [
         line
         for line in analysis.lines
