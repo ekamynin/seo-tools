@@ -328,8 +328,8 @@ elif warnings:
     diagnostics_accent = "#f59e0b"
     diagnostics_background = "rgba(245,158,11,.05)"
 else:
-    diagnostics_accent = "#16a34a"
-    diagnostics_background = "rgba(22,163,74,.045)"
+    diagnostics_accent = "rgba(128,128,128,.28)"
+    diagnostics_background = "rgba(128,128,128,.025)"
 
 st.markdown(
     f"""
