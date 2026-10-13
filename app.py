@@ -110,8 +110,7 @@ with col7:
 with col8:
     st.markdown("### 🤖 Robots.txt Tester")
     st.markdown(
-        "Аналіз robots.txt із поясненням кожного рядка. "
-        "Показує помилки, правила Allow/Disallow та перевіряє "
-        "доступність конкретного URL для вибраного робота."
+        "Аналізує robots.txt, пояснює правила та перевіряє "
+        "доступність URL для вибраного робота."
     )
     st.page_link("pages/8_🤖_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🤖")
