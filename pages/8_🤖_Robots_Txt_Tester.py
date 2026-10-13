@@ -226,22 +226,27 @@ if load_clicked:
 
 fetched = st.session_state.get(FETCH_KEY)
 if fetched:
+    # Streamlit Cloud can keep a FetchResult created before a hot deploy in an
+    # open browser session. New optional metadata must therefore have safe
+    # defaults until that session downloads the file again.
+    content_type = getattr(fetched, "content_type", "")
+    encoding_errors = getattr(fetched, "encoding_errors", False)
     redirect_note = f" · редиректів: {len(fetched.redirects)}" if fetched.redirects else ""
     st.caption(
         f"Завантажено: HTTP {fetched.status_code} · {fetched.size:,} байт{redirect_note} · {fetched.final_url}".replace(",", " ")
     )
     if fetched.truncated:
         st.warning("Файл перевищує 500 КіБ. Аналізується лише перша частина файлу.")
-    if "text/html" in fetched.content_type:
+    if "text/html" in content_type:
         st.warning(
             "Сервер повернув Content-Type: text/html замість звичайного тексту. "
             "Google спробує прочитати коректні правила, але сервер налаштований неправильно."
         )
-    elif fetched.content_type and "text/plain" not in fetched.content_type:
+    elif content_type and "text/plain" not in content_type:
         st.warning(
-            f"Нетиповий Content-Type: {fetched.content_type}. Для robots.txt рекомендовано text/plain."
+            f"Нетиповий Content-Type: {content_type}. Для robots.txt рекомендовано text/plain."
         )
-    if fetched.encoding_errors:
+    if encoding_errors:
         st.warning(
             "Файл містить байти поза UTF-8. Некоректні символи замінено, тому частина правил може не працювати."
         )
