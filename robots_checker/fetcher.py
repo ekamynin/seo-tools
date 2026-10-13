@@ -34,6 +34,8 @@ class FetchResult:
     size: int
     truncated: bool
     redirects: tuple[str, ...]
+    content_type: str
+    encoding_errors: bool
 
 
 def normalize_robots_url(value: str) -> str:
@@ -45,8 +47,9 @@ def normalize_robots_url(value: str) -> str:
     parts = urlsplit(candidate)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         raise RobotsFetchError("Підтримуються лише коректні адреси http:// та https://.")
-    path = parts.path if parts.path.lower().endswith("/robots.txt") else "/robots.txt"
-    return urlunsplit((parts.scheme, parts.netloc, path, parts.query if path == parts.path else "", ""))
+    if parts.username or parts.password:
+        raise RobotsFetchError("Адреси з логіном або паролем не підтримуються.")
+    return urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
 
 
 def _validate_public_host(url: str) -> None:
@@ -113,12 +116,6 @@ def fetch_robots(value: str, timeout: float = 10.0) -> FetchResult:
                 status_code=status_code,
             )
         content_type = response.headers.get("Content-Type", "").lower()
-        if "text/html" in content_type:
-            response.close()
-            raise RobotsFetchError(
-                "Замість robots.txt сервер повернув HTML-сторінку. "
-                "Перевірте адресу та налаштування сервера."
-            )
 
         data = bytearray()
         truncated = False
@@ -131,7 +128,12 @@ def fetch_robots(value: str, timeout: float = 10.0) -> FetchResult:
                 truncated = True
                 del data[MAX_ROBOTS_SIZE:]
                 break
-        content = bytes(data).decode("utf-8-sig", errors="replace")
+        encoding_errors = False
+        try:
+            content = bytes(data).decode("utf-8-sig")
+        except UnicodeDecodeError:
+            encoding_errors = True
+            content = bytes(data).decode("utf-8-sig", errors="replace")
         response.close()
         return FetchResult(
             content=content,
@@ -141,6 +143,8 @@ def fetch_robots(value: str, timeout: float = 10.0) -> FetchResult:
             size=len(data),
             truncated=truncated,
             redirects=tuple(redirects),
+            content_type=content_type,
+            encoding_errors=encoding_errors,
         )
 
     raise RobotsFetchError(f"Забагато редиректів — більше {MAX_REDIRECTS}.")

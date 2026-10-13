@@ -1,8 +1,15 @@
 import html
+import re
 
 import streamlit as st
 
-from robots_checker import RobotsFetchError, analyze_robots, fetch_robots, test_url
+from robots_checker import (
+    RobotsFetchError,
+    analyze_robots,
+    fetch_robots,
+    normalize_robots_url,
+    test_url,
+)
 
 
 st.set_page_config(
@@ -17,21 +24,36 @@ FETCH_KEY = "robots_tester_fetch"
 PROFILES = {
     "Google": "google",
     "Bing": "bing",
+    "Apple": "apple",
     "Стандарт robots.txt": "standard",
 }
 
 BOT_PRESETS = {
     "Googlebot": "Googlebot",
-    "Googlebot Smartphone": "Mozilla/5.0 (Linux; Android 6.0.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Googlebot Smartphone": "Googlebot",
     "Googlebot-Image": "Googlebot-Image",
+    "Googlebot-Video": "Googlebot-Video",
+    "Googlebot-News": "Googlebot-News",
+    "Storebot-Google": "Storebot-Google",
+    "Google-InspectionTool": "Google-InspectionTool",
+    "GoogleOther": "GoogleOther",
+    "GoogleOther-Image": "GoogleOther-Image",
+    "GoogleOther-Video": "GoogleOther-Video",
+    "AdsBot-Google": "AdsBot-Google",
+    "AdsBot-Google-Mobile": "AdsBot-Google-Mobile",
     "Bingbot": "bingbot",
     "Bing Ads (adidxbot)": "adidxbot",
+    "Applebot": "Applebot",
+    "Applebot-Extended": "Applebot-Extended",
     "OAI-SearchBot": "OAI-SearchBot",
     "GPTBot": "GPTBot",
     "ChatGPT-User": "ChatGPT-User",
     "OAI-AdsBot": "OAI-AdsBot",
     "ClaudeBot": "ClaudeBot",
+    "Claude-User": "Claude-User",
+    "Claude-SearchBot": "Claude-SearchBot",
     "PerplexityBot": "PerplexityBot",
+    "Perplexity-User": "Perplexity-User",
     "Власний user-agent": "",
 }
 
@@ -209,7 +231,20 @@ if fetched:
         f"Завантажено: HTTP {fetched.status_code} · {fetched.size:,} байт{redirect_note} · {fetched.final_url}".replace(",", " ")
     )
     if fetched.truncated:
-        st.warning("Файл перевищує 500 КіБ. Аналізується лише частина, яку враховує Google.")
+        st.warning("Файл перевищує 500 КіБ. Аналізується лише перша частина файлу.")
+    if "text/html" in fetched.content_type:
+        st.warning(
+            "Сервер повернув Content-Type: text/html замість звичайного тексту. "
+            "Google спробує прочитати коректні правила, але сервер налаштований неправильно."
+        )
+    elif fetched.content_type and "text/plain" not in fetched.content_type:
+        st.warning(
+            f"Нетиповий Content-Type: {fetched.content_type}. Для robots.txt рекомендовано text/plain."
+        )
+    if fetched.encoding_errors:
+        st.warning(
+            "Файл містить байти поза UTF-8. Некоректні символи замінено, тому частина правил може не працювати."
+        )
 
 editor_col, tools_col = st.columns([1.35, 1], gap="large")
 with editor_col:
@@ -281,19 +316,32 @@ with tools_col:
     if bot_label == "Власний user-agent":
         user_agent = st.text_input(
             "Власний user-agent",
-            placeholder="Назва або повний user-agent робота",
+            placeholder="Product token, наприклад ExampleBot",
         )
 
-    result_signature = hash((robots_text, target_url, user_agent, profile_label))
+    robots_origin_url = fetched.requested_url if fetched else None
+    if not robots_origin_url and source_url.strip():
+        try:
+            robots_origin_url = normalize_robots_url(source_url)
+        except RobotsFetchError:
+            pass
+
+    result_signature = hash((robots_text, target_url, user_agent, profile_label, robots_origin_url))
     if st.button("🔎 Перевірити URL", type="primary", use_container_width=True):
         if not target_url.strip():
             st.error("Вкажіть URL або шлях для перевірки.")
         elif not user_agent.strip():
             st.error("Вкажіть user-agent для перевірки.")
+        elif not re.fullmatch(r"[A-Za-z_-]+", user_agent.strip()):
+            st.error("Вкажіть product token без версії та пробілів, наприклад Googlebot або ExampleBot.")
         else:
-            result = test_url(analysis, target_url, user_agent)
-            st.session_state["robots_tester_last_result"] = result
-            st.session_state["robots_tester_last_signature"] = result_signature
+            try:
+                result = test_url(analysis, target_url, user_agent, robots_origin_url)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state["robots_tester_last_result"] = result
+                st.session_state["robots_tester_last_signature"] = result_signature
 
     result = None
     if st.session_state.get("robots_tester_last_signature") == result_signature:
