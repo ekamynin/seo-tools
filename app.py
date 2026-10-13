@@ -106,3 +106,12 @@ with col7:
         "та окремий режим для Leroy Merlin."
     )
     st.page_link("pages/7_📄_Content_Publisher.py", label="Відкрити Content Publisher", icon="📄")
+
+with col8:
+    st.markdown("### 🤖 Robots.txt Tester")
+    st.markdown(
+        "Аналіз robots.txt із поясненням кожного рядка. "
+        "Показує помилки, правила Allow/Disallow та перевіряє "
+        "доступність конкретного URL для вибраного робота."
+    )
+    st.page_link("pages/8_🤖_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🤖")
