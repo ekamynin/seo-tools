@@ -22,6 +22,7 @@ st.set_page_config(
 
 TEXT_KEY = "robots_tester_text"
 FETCH_KEY = "robots_tester_fetch"
+MAX_EDITOR_CHARS = 1_100_000
 
 PROFILES = {
     "Google": "google",
@@ -181,6 +182,7 @@ with source_col:
     source_url = st.text_input(
         "Домен або URL robots.txt",
         placeholder="example.com або https://example.com/robots.txt",
+        max_chars=2048,
     )
 with profile_col:
     profile_label = st.selectbox(
@@ -246,6 +248,7 @@ with editor_col:
         "Вміст robots.txt",
         key=TEXT_KEY,
         height=410,
+        max_chars=MAX_EDITOR_CHARS,
         label_visibility="collapsed",
         placeholder=(
             "User-agent: *\n"
@@ -256,7 +259,7 @@ with editor_col:
     )
     st.download_button(
         "💾 Завантажити поточний файл",
-        data=robots_text.encode("utf-8"),
+        data=robots_text.encode("utf-8", errors="replace"),
         file_name="robots.txt",
         mime="text/plain; charset=utf-8",
         disabled=not robots_text.strip(),
@@ -326,6 +329,7 @@ with tools_col:
     target_url = st.text_input(
         "URL або шлях",
         placeholder="https://example.com/admin/page або /admin/page",
+        max_chars=8192,
     )
     bot_label = st.selectbox("Робот", list(BOT_PRESETS))
     user_agent = BOT_PRESETS[bot_label]
@@ -333,6 +337,7 @@ with tools_col:
         user_agent = st.text_input(
             "Власний user-agent",
             placeholder="Product token, наприклад ExampleBot",
+            max_chars=256,
         )
 
     robots_origin_url = fetched.requested_url if fetched else None
@@ -365,7 +370,9 @@ with tools_col:
 
     if result:
         matched_line = result.matched_rule.line if result.matched_rule else None
-        if result.allowed:
+        if not getattr(result, "applicable", True):
+            st.warning(f"⚠️ Не перевірено. {result.reason}")
+        elif result.allowed:
             st.success(f"✅ Дозволено для {bot_label}. {result.reason}")
         else:
             st.error(f"⛔ Заборонено для {bot_label}. {result.reason}")

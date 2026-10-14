@@ -1,3 +1,4 @@
+import requests
 from unittest.mock import Mock, patch
 
 from robots_checker import (
@@ -9,6 +10,7 @@ from robots_checker import (
     test_url as check_url,
 )
 from robots_checker.seo_auditor import add_seo_risks, risk_presentation
+from robots_checker.fetcher import _validate_connected_peer
 
 
 def test_normalize_domain_and_direct_robots_url():
@@ -26,8 +28,10 @@ def test_fetch_error_keeps_blocked_url_and_status_for_manual_fallback():
         is_permanent_redirect=False,
         headers={},
     )
+    session = Mock()
+    session.get.return_value = response
     with patch("robots_checker.fetcher._validate_public_host"), patch(
-        "robots_checker.fetcher.requests.get", return_value=response
+        "robots_checker.fetcher.requests.Session", return_value=session
     ):
         try:
             fetch_robots("https://example.com/robots.txt")
@@ -47,13 +51,98 @@ def test_fetcher_keeps_html_for_google_style_line_parsing():
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
     response.iter_content.return_value = [b"<html>\nUser-agent: *\nDisallow: /private\n</html>"]
+    session = Mock()
+    session.get.return_value = response
     with patch("robots_checker.fetcher._validate_public_host"), patch(
-        "robots_checker.fetcher.requests.get", return_value=response
+        "robots_checker.fetcher.requests.Session", return_value=session
     ):
         fetched = fetch_robots("https://example.com/robots.txt")
 
     assert "User-agent" in fetched.content
     assert fetched.content_type == "text/html; charset=utf-8"
+
+
+def test_fetch_url_rejects_malformed_credentials_controls_and_service_ports():
+    invalid = [
+        "http://[::1",
+        "https://user:secret@example.com/robots.txt",
+        "https://example.com:22/robots.txt",
+        "https://example.com/robots.txt\nX-Evil: yes",
+        "https://" + ("a" * 2050),
+    ]
+
+    for value in invalid:
+        try:
+            normalize_robots_url(value)
+        except RobotsFetchError:
+            pass
+        else:
+            raise AssertionError(f"Expected unsafe URL to be rejected: {value[:80]!r}")
+
+
+def test_fetcher_closes_response_and_hides_low_level_stream_errors():
+    response = Mock(
+        status_code=200,
+        is_redirect=False,
+        is_permanent_redirect=False,
+        headers={"Content-Type": "text/plain"},
+    )
+    response.iter_content.side_effect = requests.ConnectionError("secret upstream detail")
+    session = Mock()
+    session.get.return_value = response
+    with patch("robots_checker.fetcher._validate_public_host"), patch(
+        "robots_checker.fetcher.requests.Session", return_value=session
+    ):
+        try:
+            fetch_robots("https://example.com")
+        except RobotsFetchError as exc:
+            assert "secret upstream detail" not in str(exc)
+            assert "перервано" in str(exc)
+        else:
+            raise AssertionError("Expected RobotsFetchError")
+
+    response.close.assert_called_once()
+    session.close.assert_called_once()
+
+
+def test_fetcher_validates_every_redirect_target_before_requesting_it():
+    response = Mock(
+        status_code=302,
+        is_redirect=True,
+        is_permanent_redirect=False,
+        headers={"Location": "http://127.0.0.1/secret"},
+    )
+    session = Mock()
+    session.get.return_value = response
+    with patch("robots_checker.fetcher.requests.Session", return_value=session), patch(
+        "robots_checker.fetcher.socket.getaddrinfo",
+        side_effect=lambda host, _port: [(None, None, None, None, ("93.184.216.34", 0))]
+        if host == "example.com"
+        else [(None, None, None, None, ("127.0.0.1", 0))],
+    ):
+        try:
+            fetch_robots("https://example.com")
+        except RobotsFetchError as exc:
+            assert "локальні та приватні" in str(exc)
+        else:
+            raise AssertionError("Expected private redirect to be rejected")
+
+    assert session.get.call_count == 1
+
+
+def test_fetcher_rejects_private_connected_peer_after_public_dns_lookup():
+    response = requests.Response()
+    sock = Mock()
+    sock.getpeername.return_value = ("127.0.0.1", 443)
+    response.raw = Mock()
+    response.raw._connection.sock = sock
+
+    try:
+        _validate_connected_peer(response)
+    except RobotsFetchError as exc:
+        assert "локальні та приватні" in str(exc)
+    else:
+        raise AssertionError("Expected a DNS-rebinding/private peer to be rejected")
 
 
 def test_parser_builds_groups_and_reports_line_meanings():
@@ -248,7 +337,65 @@ def test_rules_apply_only_to_same_scheme_host_and_port():
     assert check_url(analysis, "https://example.com:443/private", "Googlebot", robots_url).allowed is False
     outside = check_url(analysis, "http://example.com/private", "Googlebot", robots_url)
     assert outside.allowed is True
+    assert outside.applicable is False
     assert "не застосовується" in outside.reason
+
+
+def test_malformed_sitemap_and_target_urls_do_not_crash():
+    analysis = analyze_robots("User-agent: *\nSitemap: http://[::1", profile="google")
+    assert any("повну адресу" in issue.message for issue in analysis.issues)
+
+    try:
+        check_url(analysis, "http://[::1", "Googlebot")
+    except ValueError as exc:
+        assert "коректний URL" in str(exc)
+    else:
+        raise AssertionError("Expected malformed target URL to be rejected")
+
+
+def test_manual_input_limits_and_invalid_unicode_are_handled_safely():
+    analysis = analyze_robots("User-agent: *\nDisallow: /bad\ud800path", profile="standard")
+    assert analysis.lines
+    check_url(analysis, "/bad\ud800path", "ExampleBot")
+
+    oversized = "User-agent: *\n" + ("# filler\n" * 150000)
+    limited = analyze_robots(oversized, profile="standard")
+    assert len(limited.lines) <= 20000
+    assert any("стабільності" in issue.message or "забагато рядків" in issue.message for issue in limited.issues)
+
+
+def test_url_checker_rejects_abusive_lengths_and_invalid_agents():
+    analysis = analyze_robots("User-agent: *\nDisallow: /")
+    invalid = [
+        ("/" + "a" * 9000, "Googlebot"),
+        ("/page", "x" * 300),
+        ("/page", "Googlebot/2.1"),
+        ("/page\nnext", "Googlebot"),
+    ]
+
+    for target, agent in invalid:
+        try:
+            check_url(analysis, target, agent)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Expected abusive URL check input to be rejected")
+
+
+def test_overlong_rule_is_reported_and_never_used_for_matching():
+    analysis = analyze_robots(
+        "User-agent: *\nDisallow: /" + ("a" * 9000) + "\nDisallow: /safe"
+    )
+
+    assert any("Рядок занадто довгий" in issue.message for issue in analysis.issues)
+    assert check_url(analysis, "/safe/page", "Googlebot").allowed is False
+
+
+def test_wildcard_matcher_handles_adversarial_pattern_without_recursion():
+    pattern = ("*a" * 3000) + "b$"
+    analysis = analyze_robots(f"User-agent: *\nDisallow: /{pattern}")
+
+    assert check_url(analysis, "/" + ("a" * 7000) + "c", "Googlebot").allowed is True
 
 
 def test_bom_at_start_is_ignored():

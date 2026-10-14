@@ -69,6 +69,7 @@ class TestResult:
     matched_rule: Rule | None
     applicable_group_indexes: tuple[int, ...]
     reason: str
+    applicable: bool = True
 
 
 SUPPORTED_DIRECTIVES = {"user-agent", "allow", "disallow", "sitemap"}
@@ -95,6 +96,12 @@ GOOGLE_AGENT_FALLBACKS = {
 PRODUCT_TOKEN_RE = re.compile(r"[A-Za-z_-]+")
 PERCENT_ESCAPE_RE = re.compile(r"%[0-9A-Fa-f]{2}")
 UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+VALID_PROFILES = {"google", "bing", "apple", "standard"}
+MAX_ANALYSIS_SIZE = 1024 * 1024
+MAX_PARSED_LINES = 20_000
+MAX_LINE_LENGTH = 8192
+MAX_TARGET_LENGTH = 8192
+MAX_USER_AGENT_LENGTH = 256
 
 def _explanation(name: str, value: str) -> str:
     if name == "user-agent":
@@ -125,24 +132,53 @@ def _explanation(name: str, value: str) -> str:
 
 
 def analyze_robots(text: str, profile: str = "google") -> Analysis:
+    if profile not in VALID_PROFILES:
+        raise ValueError("Невідомий профіль пошукової системи.")
     lines: list[ParsedLine] = []
     groups: list[Group] = []
     issues: list[Issue] = []
     sitemaps: list[str] = []
     current_group: Group | None = None
 
-    encoded_text = text.encode("utf-8")
-    if profile == "google" and len(encoded_text) > 500 * 1024:
-        text = encoded_text[: 500 * 1024].decode("utf-8", errors="ignore")
+    encoded_text = text.encode("utf-8", errors="replace")
+    size_limit = 500 * 1024 if profile == "google" else MAX_ANALYSIS_SIZE
+    if len(encoded_text) > size_limit:
+        text = encoded_text[:size_limit].decode("utf-8", errors="ignore")
+        message = (
+            "Google читає лише перші 500 КіБ robots.txt; решту файлу не проаналізовано."
+            if profile == "google"
+            else "З міркувань стабільності сервіс аналізує лише перший 1 МіБ файлу."
+        )
         issues.append(
-            Issue(
-                None,
-                "warning",
-                "Google читає лише перші 500 КіБ robots.txt; решту файлу не проаналізовано.",
-            )
+            Issue(None, "warning", message)
         )
 
-    for number, raw in enumerate(text.splitlines(), start=1):
+    raw_lines = text.splitlines()
+    if len(raw_lines) > MAX_PARSED_LINES:
+        raw_lines = raw_lines[:MAX_PARSED_LINES]
+        issues.append(
+            Issue(None, "warning", f"Файл має забагато рядків; проаналізовано перші {MAX_PARSED_LINES:,}.".replace(",", " "))
+        )
+
+    for number, raw in enumerate(raw_lines, start=1):
+        if len(raw) > MAX_LINE_LENGTH:
+            issue = Issue(
+                number,
+                "error",
+                f"Рядок занадто довгий — максимум {MAX_LINE_LENGTH} символів; правило не застосовано.",
+            )
+            preview = raw[:500] + "…"
+            lines.append(
+                ParsedLine(
+                    number,
+                    preview,
+                    "invalid",
+                    explanation="Наддовгий рядок не аналізується з міркувань стабільності.",
+                    issues=[issue],
+                )
+            )
+            issues.append(issue)
+            continue
         parse_raw = raw[1:] if number == 1 and raw.startswith("\ufeff") else raw
         stripped = parse_raw.strip()
         if not stripped:
@@ -291,8 +327,12 @@ def analyze_robots(text: str, profile: str = "google") -> Analysis:
         elif name == "sitemap":
             if value:
                 sitemaps.append(value)
-            parts = urlsplit(value)
-            if not value or parts.scheme not in {"http", "https"} or not parts.netloc:
+            try:
+                parts = urlsplit(value)
+                valid_sitemap = parts.scheme in {"http", "https"} and bool(parts.netloc) and bool(parts.hostname)
+            except (UnicodeError, ValueError):
+                valid_sitemap = False
+            if not value or not valid_sitemap:
                 issue = Issue(number, "warning", "Sitemap має містити повну адресу з http:// або https://.")
                 parsed.issues.append(issue)
         elif name == "crawl-delay":
@@ -383,7 +423,7 @@ def _canonicalize_for_match(value: str, profile: str, *, target: bool = False) -
             index += 3
             continue
         if ord(char) > 127:
-            result.extend(f"%{byte:02X}" for byte in char.encode("utf-8"))
+            result.extend(f"%{byte:02X}" for byte in char.encode("utf-8", errors="replace"))
         elif target and char in {"*", "$"}:
             result.append(f"%{ord(char):02X}")
         else:
@@ -397,28 +437,27 @@ def _glob_matches(path: str, pattern: str) -> bool:
     body = pattern[:-1] if anchored else pattern
     if not anchored:
         body += "*"
+    body = re.sub(r"\*+", "*", body)
 
-    path_index = 0
-    pattern_index = 0
-    star_index = -1
-    retry_path_index = -1
-    while path_index < len(path):
-        if pattern_index < len(body) and body[pattern_index] == "*":
-            star_index = pattern_index
-            retry_path_index = path_index
-            pattern_index += 1
-        elif pattern_index < len(body) and body[pattern_index] == path[path_index]:
-            pattern_index += 1
-            path_index += 1
-        elif star_index != -1:
-            pattern_index = star_index + 1
-            retry_path_index += 1
-            path_index = retry_path_index
+    # Bitset NFA: predictable runtime even for adversarial patterns with many
+    # wildcards. State i means "the first i pattern characters matched".
+    star_mask = 0
+    literal_masks: dict[str, int] = {}
+    for index, char in enumerate(body):
+        bit = 1 << index
+        if char == "*":
+            star_mask |= bit
         else:
+            literal_masks[char] = literal_masks.get(char, 0) | bit
+
+    states = 1
+    states |= (states & star_mask) << 1
+    for char in path:
+        states = (states & star_mask) | ((states & literal_masks.get(char, 0)) << 1)
+        states |= (states & star_mask) << 1
+        if not states:
             return False
-    while pattern_index < len(body) and body[pattern_index] == "*":
-        pattern_index += 1
-    return pattern_index == len(body)
+    return bool(states & (1 << len(body)))
 
 
 def _matching_length(pattern: str, profile: str) -> int:
@@ -452,7 +491,10 @@ def _rule_priority(rule: Rule, path: str, profile: str) -> int | None:
 
 
 def _origin(url: str) -> tuple[str, str, int | None] | None:
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except (UnicodeError, ValueError):
+        return None
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         return None
     try:
@@ -470,10 +512,21 @@ def test_url(
     user_agent: str,
     robots_url: str | None = None,
 ) -> TestResult:
+    if len(user_agent) > MAX_USER_AGENT_LENGTH:
+        raise ValueError(f"User-agent занадто довгий — максимум {MAX_USER_AGENT_LENGTH} символів.")
     if not user_agent.strip():
         raise ValueError("Вкажіть user-agent для перевірки.")
+    if not PRODUCT_TOKEN_RE.fullmatch(user_agent.strip()):
+        raise ValueError("Вкажіть product token без версії та пробілів, наприклад Googlebot або ExampleBot.")
+    if len(target) > MAX_TARGET_LENGTH:
+        raise ValueError(f"URL занадто довгий — максимум {MAX_TARGET_LENGTH} символів.")
+    if any(ord(char) < 32 or ord(char) == 127 for char in target):
+        raise ValueError("URL містить недопустимий керівний символ.")
     has_absolute_target = "://" in target
-    parts = urlsplit(target if has_absolute_target else "https://example.invalid" + (target if target.startswith("/") else "/" + target))
+    try:
+        parts = urlsplit(target if has_absolute_target else "https://example.invalid" + (target if target.startswith("/") else "/" + target))
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError("Вкажіть коректний URL або шлях.") from exc
     path = parts.path or "/"
     if parts.query:
         path += "?" + parts.query
@@ -491,6 +544,7 @@ def test_url(
             None,
             (),
             "Цей robots.txt не застосовується до URL з іншим протоколом, доменом або портом.",
+            False,
         )
     canonical_path = _canonicalize_for_match(path, analysis.profile, target=True)
 
