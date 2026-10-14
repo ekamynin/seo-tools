@@ -4,12 +4,14 @@ import re
 import streamlit as st
 
 from robots_checker import (
+    Issue,
     RobotsFetchError,
     analyze_robots,
     fetch_robots,
     normalize_robots_url,
     test_url,
 )
+from robots_checker.seo_auditor import add_seo_risks
 
 
 st.set_page_config(
@@ -263,6 +265,10 @@ if not robots_text.strip():
     st.stop()
 
 analysis = analyze_robots(robots_text, PROFILES[profile_label])
+# During a Streamlit hot deploy, an already-open session can retain the old
+# analyzer module. The auditor is a separate, idempotent module so new checks
+# are applied immediately without requiring the user to restart the session.
+add_seo_risks(analysis.groups, analysis.lines, analysis.issues, Issue)
 errors = [issue for issue in analysis.issues if issue.severity == "error"]
 warnings = [issue for issue in analysis.issues if issue.severity == "warning"]
 risks = [issue for issue in analysis.issues if issue.severity == "risk"]

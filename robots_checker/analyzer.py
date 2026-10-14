@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 from urllib.parse import urlsplit
 
+from .seo_auditor import add_seo_risks
+
 
 Severity = Literal["error", "warning", "risk", "info"]
 
@@ -94,64 +96,6 @@ PRODUCT_TOKEN_RE = re.compile(r"[A-Za-z_-]+")
 PERCENT_ESCAPE_RE = re.compile(r"%[0-9A-Fa-f]{2}")
 UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
-SEO_ALLOW_RISK_PATTERNS = (
-    (
-        re.compile(
-            r"(?:^|[/_*?&=.-])(?:checkout|check-out|cart|basket|shopping-bag|"
-            r"order-confirmation|korzina|koshyk|koszyk|oformlenn(?:ya|ia|ie)(?:-zamovlennya|-zakaza)?)(?:$|[/_*?&=.-])"
-            r"|(?:^|[/_*?&=.-])(?:кошик|корзина|оформлення(?:-замовлення)?)(?:$|[/_*?&=.-])"
-        ),
-        "правило дозволяє сканування кошика або оформлення замовлення. "
-        "Такі URL зазвичай не мають пошукової цінності; перевірте, чи це навмисно.",
-    ),
-    (
-        re.compile(
-            r"(?:^|[/_*?&=.-])(?:login|log-in|signin|sign-in|signup|sign-up|register|"
-            r"registration|account|profile|cabinet|kabinet|lichn(?:y|yi|ij)-kabinet|"
-            r"customer-account|vkhid|voiti|reiestratsiia)(?:$|[/_*?&=.-])"
-            r"|(?:^|[/_*?&=.-])(?:вхід|вход|реєстрація|регистрация|кабінет|профіль)(?:$|[/_*?&=.-])"
-        ),
-        "правило дозволяє сканування авторизації або особистого кабінету. "
-        "Перевірте, чи ці службові сторінки мають потрапляти в обхід.",
-    ),
-    (
-        re.compile(
-            r"(?:^|[/_*?&=.-])(?:search|site-search|poshuk|poisk|filter|filters|facet|facets|"
-            r"sort|orderby)(?:$|[/_*?&=.-])"
-            r"|(?:^|[/_*?&=.-])(?:пошук|поиск|фільтр|фильтр|сортування|сортировка)(?:$|[/_*?&=.-])"
-        ),
-        "правило дозволяє сканування пошуку, фільтрів або сортування. "
-        "Це може створювати багато дубльованих і малокорисних URL.",
-    ),
-    (
-        re.compile(
-            r"(?:^|[/_*?&=.-])(?:admin|administrator|wp-admin|api|graphql|ajax|internal|private)(?:$|[/_*?&=.-])"
-            r"|(?:^|[/_*?&=.-])(?:адмін|админ|внутрішній)(?:$|[/_*?&=.-])"
-        ),
-        "правило дозволяє сканування технічного або адміністративного розділу. "
-        "Перевірте, чи він справді має бути доступним роботам.",
-    ),
-)
-SEO_IMPORTANT_SECTION_RE = re.compile(
-    r"^/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:products?|catalog|category|categories|collections?|"
-    r"shop|store|blog|articles?|news|katalog|tovary?|tovari|produkty?|kategori(?:ya|ia|i)|novyn[yi]|"
-    r"каталог|товари|продукти|категорія|категории|магазин|блог|статті|статьи|новини|новости)/?$"
-)
-SEO_RENDER_RESOURCE_RE = re.compile(
-    r"(?:^|[/_*?&=.-])(?:css|js|javascript|assets?|static|wp-content)(?:$|[/_*?&=.-])|"
-    r"\.(?:css|js)(?:$|[?*$])"
-)
-SEO_IMAGE_RESOURCE_RE = re.compile(
-    r"(?:^|[/_*?&=.-])(?:images?|img|media|uploads?)(?:$|[/_*?&=.-])|"
-    r"\.(?:png|jpe?g|gif|webp|svg|avif)(?:$|[?*$])"
-)
-SEO_SAFE_ALLOW_RESOURCE_RE = re.compile(
-    r"(?:admin-ajax|load-scripts|load-styles)\.php(?:$|[?*$])|"
-    r"\.(?:css|js|mjs|png|jpe?g|gif|webp|svg|avif|woff2?|ttf)(?:$|[?*$])"
-)
-SEO_INDEXING_AGENTS = frozenset({"*", "googlebot", "bingbot", "applebot"})
-
-
 def _explanation(name: str, value: str) -> str:
     if name == "user-agent":
         if value == "*":
@@ -178,103 +122,6 @@ def _explanation(name: str, value: str) -> str:
     if name in {"host", "clean-param"}:
         return f"Директива «{name}» підтримується не всіма пошуковими системами."
     return f"Невідома директива «{name}» буде проігнорована більшістю роботів."
-
-
-def _add_line_issue(
-    lines: list[ParsedLine],
-    issues: list[Issue],
-    line_number: int,
-    severity: Severity,
-    message: str,
-) -> None:
-    issue = Issue(line_number, severity, message)
-    lines[line_number - 1].issues.append(issue)
-    issues.append(issue)
-
-
-def _seo_pattern(value: str) -> str:
-    lowered = value.lower().split("#", 1)[0]
-    lowered = re.sub(r"%2[fF]", "/", lowered)
-    return re.sub(r"/+", "/", lowered)
-
-
-def _add_seo_risks(
-    groups: list[Group],
-    lines: list[ParsedLine],
-    issues: list[Issue],
-) -> None:
-    for group in groups:
-        seen_rules: dict[str, Rule] = {}
-        closes_indexing_bot = bool(SEO_INDEXING_AGENTS.intersection(group.agents))
-
-        for rule in group.rules:
-            pattern = _seo_pattern(rule.pattern)
-
-            if rule.directive == "allow" and not SEO_SAFE_ALLOW_RESOURCE_RE.search(pattern):
-                for matcher, message in SEO_ALLOW_RISK_PATTERNS:
-                    if matcher.search(pattern):
-                        _add_line_issue(
-                            lines,
-                            issues,
-                            rule.line,
-                            "risk",
-                            f"SEO-ризик: {message}",
-                        )
-                        break
-
-            if rule.directive == "disallow":
-                broad_pattern = pattern.replace("*", "").removesuffix("$").rstrip("/") or "/"
-                if pattern in {"/", "/*", "/*$"} and closes_indexing_bot:
-                    _add_line_issue(
-                        lines,
-                        issues,
-                        rule.line,
-                        "risk",
-                        "SEO-ризик: це правило закриває весь сайт для основного пошукового робота. "
-                        "Перевірте, чи сайт не закрито випадково.",
-                    )
-                elif SEO_IMPORTANT_SECTION_RE.fullmatch(broad_pattern):
-                    _add_line_issue(
-                        lines,
-                        issues,
-                        rule.line,
-                        "risk",
-                        "SEO-ризик: можливо, закрито важливий контент — товари, категорії або статті. "
-                        "Перевірте масштаб шаблону.",
-                    )
-                elif SEO_RENDER_RESOURCE_RE.search(pattern):
-                    _add_line_issue(
-                        lines,
-                        issues,
-                        rule.line,
-                        "risk",
-                        "SEO-ризик: блокуються CSS, JavaScript або інші ресурси. "
-                        "Пошуковик може неправильно відрендерити сторінку.",
-                    )
-                elif SEO_IMAGE_RESOURCE_RE.search(pattern):
-                    _add_line_issue(
-                        lines,
-                        issues,
-                        rule.line,
-                        "risk",
-                        "SEO-ризик: блокуються зображення або медіафайли. "
-                        "Це може завадити рендерингу та пошуку за зображеннями.",
-                    )
-
-            conflict = seen_rules.get(pattern)
-            if conflict and conflict.directive != rule.directive:
-                winner = "Allow" if "allow" in {conflict.directive, rule.directive} else rule.directive.title()
-                _add_line_issue(
-                    lines,
-                    issues,
-                    rule.line,
-                    "risk",
-                    f"SEO-ризик: для шаблону «{rule.pattern}» є і Allow, і Disallow "
-                    f"(рядки {conflict.line} та {rule.line}). За однакової специфічності перемагає {winner}; "
-                    "перевірте задум.",
-                )
-            else:
-                seen_rules.setdefault(pattern, rule)
 
 
 def analyze_robots(text: str, profile: str = "google") -> Analysis:
@@ -492,7 +339,7 @@ def analyze_robots(text: str, profile: str = "google") -> Analysis:
             if line is not None:
                 lines[line - 1].issues.append(issue)
 
-    _add_seo_risks(groups, lines, issues)
+    add_seo_risks(groups, lines, issues, Issue)
 
     return Analysis(lines=lines, groups=groups, issues=issues, sitemaps=sitemaps, profile=profile)
 

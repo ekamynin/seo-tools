@@ -1,12 +1,14 @@
 from unittest.mock import Mock, patch
 
 from robots_checker import (
+    Issue,
     RobotsFetchError,
     analyze_robots,
     fetch_robots,
     normalize_robots_url,
     test_url as check_url,
 )
+from robots_checker.seo_auditor import add_seo_risks
 
 
 def test_normalize_domain_and_direct_robots_url():
@@ -440,3 +442,12 @@ def test_seo_risk_explains_equal_allow_disallow_conflict():
     assert len(conflict_risks) == 1
     assert conflict_risks[0].line == 3
     assert "перемагає Allow" in conflict_risks[0].message
+
+
+def test_seo_auditor_is_idempotent_for_hot_deploys():
+    analysis = analyze_robots("User-agent: *\nAllow: /checkout", profile="google")
+
+    add_seo_risks(analysis.groups, analysis.lines, analysis.issues, Issue)
+    add_seo_risks(analysis.groups, analysis.lines, analysis.issues, Issue)
+
+    assert len([issue for issue in analysis.issues if issue.severity == "risk"]) == 1
