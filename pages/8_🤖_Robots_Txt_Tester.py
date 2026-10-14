@@ -79,6 +79,8 @@ def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
         severity = ""
         if any(issue.severity == "error" for issue in line.issues):
             severity = "error"
+        elif any(issue.severity == "risk" for issue in line.issues):
+            severity = "risk"
         elif any(issue.severity == "warning" for issue in line.issues):
             severity = "warning"
         elif line.issues:
@@ -91,7 +93,7 @@ def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
         issue_text = " ".join(
             issue.message
             for issue in line.issues
-            if issue.severity in {"error", "warning"}
+            if issue.severity in {"error", "warning", "risk"}
         )
         details = line.explanation
         if issue_text:
@@ -122,6 +124,7 @@ def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
         .kind-comment .robots-code, .kind-comment .robots-meaning { color: #8a8f98; }
         .kind-crawl-delay .robots-code, .kind-crawl-delay .robots-badge { color: #d97706; }
         .severity-error { box-shadow: inset 4px 0 #ef4444; background: rgba(239,68,68,.07); }
+        .severity-risk { box-shadow: inset 4px 0 #f97316; background: rgba(249,115,22,.065); }
         .severity-warning { box-shadow: inset 4px 0 #f59e0b; background: rgba(245,158,11,.06); }
         .matched { outline: 2px solid #2684ff; outline-offset: -2px; background: rgba(38,132,255,.10); }
         @media (max-width: 900px) {
@@ -262,10 +265,20 @@ if not robots_text.strip():
 analysis = analyze_robots(robots_text, PROFILES[profile_label])
 errors = [issue for issue in analysis.issues if issue.severity == "error"]
 warnings = [issue for issue in analysis.issues if issue.severity == "warning"]
+risks = [issue for issue in analysis.issues if issue.severity == "risk"]
 matched_line = None
 
 with tools_col:
     st.markdown("#### Аналіз і перевірка")
+    if risks:
+        st.markdown(f"##### ⚠️ SEO-ризики: {len(risks)}")
+        st.caption("Евристична перевірка: це не синтаксичні помилки, а сигнали для ручної перевірки.")
+        for risk in risks[:3]:
+            line_label = f"Рядок {risk.line}: " if risk.line else ""
+            st.markdown(f"- **{line_label}**{risk.message.removeprefix('SEO-ризик: ')}")
+        if len(risks) > 3:
+            st.caption(f"Ще ризиків: {len(risks) - 3} — у построковому розборі нижче.")
+
     st.markdown("##### Перевірити конкретний URL")
     target_url = st.text_input(
         "URL або шлях",
@@ -328,7 +341,7 @@ with tools_col:
             )
             st.caption("Застосована група: User-agent: " + ", ".join(group_agents))
 
-problem_count = len(errors) + len(warnings)
+problem_count = len(errors) + len(warnings) + len(risks)
 st.markdown(
     """
     <style>
@@ -345,11 +358,14 @@ st.markdown(
 )
 
 if problem_count:
-    breakdown_label = (
-        f"🔴 Помилки: {len(errors)} · "
-        f"🟡 Попередження: {len(warnings)} · "
-        "Відкрити построковий розбір"
-    )
+    diagnostics = []
+    if errors:
+        diagnostics.append(f"🔴 Помилки: {len(errors)}")
+    if risks:
+        diagnostics.append(f"🟠 SEO-ризики: {len(risks)}")
+    if warnings:
+        diagnostics.append(f"🟡 Попередження: {len(warnings)}")
+    breakdown_label = " · ".join(diagnostics) + " · Відкрити построковий розбір"
 else:
     breakdown_label = "✅ Проблем не знайдено · Відкрити построковий розбір"
 
@@ -370,14 +386,14 @@ with st.expander(
         )
 
     only_problems = st.toggle(
-        "Показати лише помилки й попередження",
+        "Показати лише помилки, попередження й SEO-ризики",
         value=True,
     )
     if only_problems:
         visible_lines = [
             line
             for line in analysis.lines
-            if any(issue.severity in {"error", "warning"} for issue in line.issues)
+            if any(issue.severity in {"error", "warning", "risk"} for issue in line.issues)
             or line.number == matched_line
         ]
         if visible_lines:
@@ -395,8 +411,8 @@ with st.expander(
     general_issues = [
         issue
         for issue in analysis.issues
-        if issue.severity in {"error", "warning"} and issue.line is None
+        if issue.severity in {"error", "warning", "risk"} and issue.line is None
     ]
     for issue in general_issues:
-        icon = "🔴" if issue.severity == "error" else "🟡"
+        icon = {"error": "🔴", "risk": "🟠", "warning": "🟡"}[issue.severity]
         st.write(f"{icon} {issue.message}")

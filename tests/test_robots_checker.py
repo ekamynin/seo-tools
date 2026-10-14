@@ -354,3 +354,89 @@ def test_google_ignores_content_after_500_kibibytes():
 
     assert check_url(analysis, "/late", "Googlebot").allowed is True
     assert any("500 КіБ" in issue.message for issue in analysis.issues)
+
+
+def test_seo_risk_flags_open_checkout_account_and_search_paths():
+    analysis = analyze_robots(
+        "User-agent: *\n"
+        "Allow: /checkout\n"
+        "Allow: /customer/account/\n"
+        "Allow: /search?query=*",
+        profile="google",
+    )
+    risks = [issue for issue in analysis.issues if issue.severity == "risk"]
+
+    assert [risk.line for risk in risks] == [2, 3, 4]
+    assert any("кошика або оформлення" in risk.message for risk in risks)
+    assert any("особистого кабінету" in risk.message for risk in risks)
+    assert any("пошуку, фільтрів" in risk.message for risk in risks)
+
+
+def test_seo_risk_recognizes_localized_common_paths():
+    analysis = analyze_robots(
+        "User-agent: *\nAllow: /кошик\nDisallow: /каталог/",
+        profile="google",
+    )
+
+    assert len([issue for issue in analysis.issues if issue.severity == "risk"]) == 2
+
+
+def test_seo_risk_flags_broad_content_and_resource_blocks():
+    analysis = analyze_robots(
+        "User-agent: *\n"
+        "Disallow: /catalog/\n"
+        "Disallow: /*.css$\n"
+        "Disallow: /images/",
+        profile="google",
+    )
+    risks = [issue for issue in analysis.issues if issue.severity == "risk"]
+
+    assert [risk.line for risk in risks] == [2, 3, 4]
+    assert any("важливий контент" in risk.message for risk in risks)
+    assert any("CSS, JavaScript" in risk.message for risk in risks)
+    assert any("зображення" in risk.message for risk in risks)
+
+
+def test_seo_risk_does_not_flag_narrow_catalog_filter_block():
+    analysis = analyze_robots(
+        "User-agent: *\nDisallow: /catalog/filter/",
+        profile="google",
+    )
+
+    assert not [issue for issue in analysis.issues if issue.severity == "risk"]
+
+
+def test_seo_risk_does_not_flag_allowed_rendering_resources():
+    analysis = analyze_robots(
+        "User-agent: *\n"
+        "Disallow: /wp-admin/\n"
+        "Allow: /wp-admin/admin-ajax.php\n"
+        "Allow: /account/styles.css",
+        profile="google",
+    )
+
+    assert not [issue for issue in analysis.issues if issue.severity == "risk"]
+
+
+def test_seo_risk_flags_full_site_block_only_for_indexing_agents():
+    global_block = analyze_robots("User-agent: *\nDisallow: /", profile="google")
+    ai_block = analyze_robots("User-agent: GPTBot\nDisallow: /", profile="google")
+
+    assert any(issue.severity == "risk" for issue in global_block.issues)
+    assert not [issue for issue in ai_block.issues if issue.severity == "risk"]
+
+
+def test_seo_risk_explains_equal_allow_disallow_conflict():
+    analysis = analyze_robots(
+        "User-agent: *\nDisallow: /checkout\nAllow: /checkout",
+        profile="google",
+    )
+    conflict_risks = [
+        issue
+        for issue in analysis.issues
+        if issue.severity == "risk" and "є і Allow, і Disallow" in issue.message
+    ]
+
+    assert len(conflict_risks) == 1
+    assert conflict_risks[0].line == 3
+    assert "перемагає Allow" in conflict_risks[0].message
