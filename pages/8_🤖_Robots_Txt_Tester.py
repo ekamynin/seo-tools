@@ -11,7 +11,7 @@ from robots_checker import (
     normalize_robots_url,
     test_url,
 )
-from robots_checker.seo_auditor import add_seo_risks
+from robots_checker.seo_auditor import add_seo_risks, risk_presentation
 
 
 st.set_page_config(
@@ -92,12 +92,19 @@ def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
             classes += " matched"
         label = KIND_LABELS.get(line.kind, "ДИРЕКТИВА")
         badges = f'<span class="robots-badge">{html.escape(label)}</span>' if label else ""
+        risk_titles = [
+            risk_presentation(issue.message)[0]
+            for issue in line.issues
+            if issue.severity == "risk"
+        ]
+        if risk_titles:
+            badges += '<span class="robots-risk-badge">SEO-РИЗИК</span>'
         issue_text = " ".join(
             issue.message
             for issue in line.issues
-            if issue.severity in {"error", "warning", "risk"}
+            if issue.severity in {"error", "warning"}
         )
-        details = line.explanation
+        details = " · ".join(dict.fromkeys(risk_titles)) if risk_titles else line.explanation
         if issue_text:
             details += " " + issue_text
         raw = html.escape(line.raw) if line.raw else "&nbsp;"
@@ -119,6 +126,7 @@ def _render_line_breakdown(analysis, matched_line=None, visible_lines=None):
         .robots-code { padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; background: rgba(128,128,128,.035); font-size: 13px; }
         .robots-meaning { padding: 7px 12px; font-size: 12px; line-height: 1.5; }
         .robots-badge { display: inline-block; min-width: 78px; margin-right: 9px; padding: 2px 7px; border-radius: 999px; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .035em; background: rgba(128,128,128,.14); }
+        .robots-risk-badge { display: inline-block; margin-right: 9px; padding: 2px 7px; border-radius: 999px; color: #f97316; background: rgba(249,115,22,.13); font-size: 9px; font-weight: 800; letter-spacing: .035em; }
         .kind-user-agent .robots-code, .kind-user-agent .robots-badge { color: #8b5cf6; }
         .kind-disallow .robots-code, .kind-disallow .robots-badge { color: #ef4444; }
         .kind-allow .robots-code, .kind-allow .robots-badge { color: #16a34a; }
@@ -277,11 +285,40 @@ matched_line = None
 with tools_col:
     st.markdown("#### Аналіз і перевірка")
     if risks:
-        st.markdown(f"##### ⚠️ SEO-ризики: {len(risks)}")
-        st.caption("Евристична перевірка: це не синтаксичні помилки, а сигнали для ручної перевірки.")
+        risk_cards = []
         for risk in risks[:3]:
-            line_label = f"Рядок {risk.line}: " if risk.line else ""
-            st.markdown(f"- **{line_label}**{risk.message.removeprefix('SEO-ризик: ')}")
+            title, reason = risk_presentation(risk.message)
+            raw_rule = analysis.lines[risk.line - 1].raw if risk.line else ""
+            line_label = f"Рядок {risk.line}" if risk.line else "Загальна перевірка"
+            details = risk.message.removeprefix("SEO-ризик: ")
+            risk_cards.append(
+                '<div class="seo-risk-card">'
+                f'<div class="seo-risk-title">⚠️ {html.escape(title)}</div>'
+                f'<div class="seo-risk-meta">{html.escape(line_label)}'
+                f' <code>{html.escape(raw_rule)}</code></div>'
+                f'<div class="seo-risk-reason">{html.escape(reason)}</div>'
+                '<details class="seo-risk-details"><summary>Детальніше</summary>'
+                f'<div>{html.escape(details)}</div></details>'
+                '</div>'
+            )
+        st.markdown(
+            """
+            <style>
+            .seo-risk-list { display: grid; gap: 8px; margin: 2px 0 14px; }
+            .seo-risk-card { padding: 10px 12px; border: 1px solid rgba(249,115,22,.32); border-left: 4px solid #f97316; border-radius: 9px; background: rgba(249,115,22,.045); }
+            .seo-risk-title { font-size: 14px; font-weight: 750; line-height: 1.35; }
+            .seo-risk-meta { margin-top: 4px; color: #8a8f98; font-size: 11px; }
+            .seo-risk-meta code { margin-left: 5px; color: inherit; font-size: 11px; }
+            .seo-risk-reason { margin-top: 5px; font-size: 12px; line-height: 1.4; }
+            .seo-risk-details { margin-top: 5px; color: #8a8f98; font-size: 11px; line-height: 1.4; }
+            .seo-risk-details summary { cursor: pointer; color: #f97316; font-weight: 650; }
+            .seo-risk-details div { margin-top: 4px; }
+            </style>
+            <div class="seo-risk-list">"""
+            + "".join(risk_cards)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
         if len(risks) > 3:
             st.caption(f"Ще ризиків: {len(risks) - 3} — у построковому розборі нижче.")
 

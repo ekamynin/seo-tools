@@ -8,7 +8,7 @@ from robots_checker import (
     normalize_robots_url,
     test_url as check_url,
 )
-from robots_checker.seo_auditor import add_seo_risks
+from robots_checker.seo_auditor import add_seo_risks, risk_presentation
 
 
 def test_normalize_domain_and_direct_robots_url():
@@ -451,3 +451,13 @@ def test_seo_auditor_is_idempotent_for_hot_deploys():
     add_seo_risks(analysis.groups, analysis.lines, analysis.issues, Issue)
 
     assert len([issue for issue in analysis.issues if issue.severity == "risk"]) == 1
+
+
+def test_seo_risk_has_a_short_junior_friendly_presentation():
+    analysis = analyze_robots("User-agent: *\nAllow: /checkout", profile="google")
+    risk = next(issue for issue in analysis.issues if issue.severity == "risk")
+
+    title, reason = risk_presentation(risk.message)
+
+    assert title == "Схоже, відкрито checkout"
+    assert reason == "Сторінки оформлення зазвичай не потрібні в пошуку."
