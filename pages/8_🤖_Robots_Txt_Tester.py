@@ -312,7 +312,7 @@ with tools_col:
             .seo-risk-reason { margin-top: 5px; font-size: 12px; line-height: 1.4; }
             .seo-risk-details { margin-top: 5px; color: #8a8f98; font-size: 11px; line-height: 1.4; }
             .seo-risk-details summary { cursor: pointer; color: #f97316; font-weight: 650; }
-            .seo-risk-details div { margin-top: 4px; }
+            .seo-risk-details div { margin-top: 6px; color: #f5f5f5; font-size: 13px; line-height: 1.5; }
             </style>
             <div class="seo-risk-list">"""
             + "".join(risk_cards)
