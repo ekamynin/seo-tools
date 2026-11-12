@@ -118,7 +118,7 @@ with col8:
 with st.container(border=True):
     audit_intro, audit_action = st.columns([3, 1], vertical_alignment="center")
     with audit_intro:
-        st.markdown("### Technical Audit")
+        st.markdown("### Technical Audit Checklist")
         st.markdown("126 перевірок у 19 розділах · нотатки та звіт")
     with audit_action:
         st.page_link("pages/9_🧾_SEO_Audit.py", label="Відкрити чекліст", icon="🧾")

@@ -4,8 +4,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
-st.set_page_config(page_title="Technical Audit", page_icon="🧾", layout="wide")
-st.title("Technical Audit")
+st.set_page_config(page_title="Technical Audit Checklist", page_icon="🧾", layout="wide")
+st.title("Technical Audit Checklist")
 
 assets = Path(__file__).resolve().parents[1] / "seo_audit"
 template = (assets / "checklist.html").read_text(encoding="utf-8")
