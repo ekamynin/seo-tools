@@ -3,72 +3,140 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Чекліст технічного SEO-аудиту</title>
+<title>Technical Audit</title>
 <style>
-:root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
-body { margin: 0; padding: 0 4px 12px; color: CanvasText; background: Canvas; }
+:root {
+  color-scheme: light dark;
+  font: 15px system-ui, sans-serif;
+  --surface: light-dark(#fff, #1b2123);
+  --muted-surface: light-dark(#f3f7f6, #232c2d);
+  --line: light-dark(#d6e2df, #354345);
+  --ink: light-dark(#182522, #eaf2f0);
+  --muted: light-dark(#4e6260, #aebfbc);
+  --accent: light-dark(#14624d, #99efd2);
+  --accent-bg: light-dark(#e0f4ec, #23453b);
+  --issue: light-dark(#a23535, #ffc1bd);
+  --issue-bg: light-dark(#fceae8, #482f30);
+  --important: light-dark(#775115, #f6d28e);
+  --important-bg: light-dark(#fff1d7, #423824);
+}
 * { box-sizing: border-box; }
+body { margin: 0; padding: 0 1px 12px; color: var(--ink); background: transparent; }
 button, input, select, textarea { font: inherit; }
-button, input, select, textarea, summary { border: 1px solid GrayText; border-radius: 8px; }
+button, input, select, textarea { border: 1px solid var(--line); border-radius: 9px; }
 button, summary, select { cursor: pointer; }
-button, input, select, textarea { padding: .55rem .7rem; }
-input, textarea, select { background: Canvas; color: CanvasText; }
-button { background: ButtonFace; color: ButtonText; }
-button[aria-pressed=true] { background: #19644f; color: white; border-color: #19644f; }
-button:hover, summary:hover { border-color: #33836b; }
-label { display: grid; gap: .35rem; }
-.project { max-width: 33rem; }
-.toolbar, .statuses, .controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
-.stats { display: flex; flex-wrap: wrap; gap: .4rem 1.3rem; margin-block: .55rem 1rem; }
-progress { width: 100%; height: .65rem; accent-color: #248369; }
-#controls { margin: 1rem 0; display: grid; gap: .7rem; }
-.controls label { display: flex; align-items: center; flex-wrap: wrap; }
-#feedback { margin: .5rem 0; }
+button, input, select, textarea { min-height: 40px; padding: .55rem .78rem; }
+input, textarea, select, button { background: var(--surface); color: var(--ink); }
+button:hover, summary:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+label { display: grid; gap: .4rem; min-width: 0; color: var(--muted); font-size: .85rem; font-weight: 650; }
+.overview {
+  padding: clamp(16px, 3vw, 28px);
+  background: linear-gradient(125deg, var(--accent-bg), var(--surface) 68%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+.overview-head { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.2rem 2rem; align-items: end; }
+.progress-label { display: block; margin-bottom: .3rem; color: var(--muted); font-size: .85rem; font-weight: 650; }
+#progress-text { display: block; font-size: clamp(1.08rem, 2.6vw, 1.65rem); line-height: 1.3; font-variant-numeric: tabular-nums; }
+progress { display: block; width: 100%; height: 8px; margin-top: .65rem; accent-color: var(--accent); border: 0; border-radius: 8px; overflow: hidden; background: var(--line); }
+progress::-webkit-progress-bar { background: var(--line); }
+progress::-webkit-progress-value { background: var(--accent); }
+progress::-moz-progress-bar { background: var(--accent); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; margin: 1.15rem 0 0; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .65rem .85rem; }
+.stat dt { color: var(--muted); font-size: .8rem; line-height: 1.3; }
+.stat dd { margin: .2rem 0 0; font-size: 1.35rem; font-weight: 740; font-variant-numeric: tabular-nums; }
+.stat .ok { color: var(--accent); }
+.stat .issue { color: var(--issue); }
+#controls { margin: 1rem 0 .85rem; display: grid; gap: .6rem; }
+.controls-row { display: flex; align-items: end; flex-wrap: wrap; gap: .9rem 1.4rem; }
+.controls { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); flex: 1 1 320px; gap: .6rem; }
+select { width: 100%; }
+.toolbar, .statuses { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.toolbar button, .statuses button { font-size: .85rem; font-weight: 650; }
+#copy { color: var(--accent); background: var(--accent-bg); border-color: transparent; }
+#copy:hover { border-color: var(--accent); }
+#reset, .note-toggle { color: var(--muted); background: transparent; }
+#feedback { margin: .65rem 0; }
 #feedback:empty { margin: 0; }
-small { line-height: 1.4; }
-details { margin-block: .55rem; }
-summary { padding: .65rem .8rem; font-weight: 650; }
-summary span { margin-inline-start: .55rem; font-weight: 400; }
-.check { border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); padding: .75rem .8rem; }
-.check h3 { font-size: 1rem; margin: 0 0 .35rem; }
-.check p { margin: 0 0 .6rem; line-height: 1.45; }
-.badge { display: inline-block; font-size: .72rem; padding: .12rem .4rem; margin-inline-start: .4rem; border-radius: .3rem; background: #e5eaf0; color: #334155; white-space: nowrap; }
-.badge.critical { background: #fde3df; color: #8a261e; }
-.badge.important { background: #faedcf; color: #674c09; }
-.notes { margin-top: .5rem; }
+small { color: var(--muted); line-height: 1.45; }
+details { margin-block: .65rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+summary { display: flex; align-items: center; gap: .65rem; padding: .85rem 1rem; border: 1px solid transparent; border-radius: 12px; font-weight: 680; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: ""; flex: 0 0 7px; height: 7px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); margin-inline-end: .15rem; }
+details[open] summary::before { transform: rotate(45deg); }
+details[open] summary { background: var(--muted-surface); border-radius: 12px 12px 0 0; }
+.section-count { margin-inline-start: auto; padding: .2rem .55rem; border-radius: 999px; background: var(--accent-bg); color: var(--accent); font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.check { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-items: start; gap: .45rem 1.2rem; padding: 1rem; border-top: 1px solid var(--line); }
+.check h3 { font-size: 1rem; margin: 0 0 .28rem; line-height: 1.45; font-weight: 670; }
+.check p { margin: 0; line-height: 1.5; color: var(--muted); font-size: .9rem; }
+.badge { display: inline-block; vertical-align: middle; font-size: .68rem; font-weight: 700; padding: .13rem .45rem; margin-inline-start: .45rem; border-radius: 999px; background: var(--muted-surface); color: var(--muted); white-space: nowrap; }
+.badge.critical { background: var(--issue-bg); color: var(--issue); }
+.badge.important { background: var(--important-bg); color: var(--important); }
+.statuses button { min-height: 36px; padding: .4rem .6rem; }
+.statuses button[aria-pressed=true] { color: var(--accent); background: var(--accent-bg); border-color: var(--accent); }
+.statuses button[data-status=issue][aria-pressed=true] { color: var(--issue); background: var(--issue-bg); border-color: var(--issue); }
+.statuses button[data-status=na][aria-pressed=true] { color: var(--ink); background: var(--muted-surface); border-color: var(--muted); }
+.notes { grid-column: 1 / -1; margin-top: .2rem; }
 textarea { width: 100%; resize: vertical; }
-dialog { max-width: min(95vw, 44rem); width: 100%; border: 1px solid GrayText; border-radius: 10px; color: CanvasText; }
+dialog { max-width: min(94vw, 44rem); width: 100%; padding: 1.25rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); }
+dialog::backdrop { background: #09161380; }
+dialog form { margin-top: .75rem; }
+#empty { padding: 1rem; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); }
 [hidden] { display: none !important; }
+@media (max-width: 860px) {
+  .check { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .overview-head { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .controls { grid-template-columns: 1fr; }
+  summary, .check { padding-inline: .75rem; }
+}
 </style>
 </head>
 <body>
-<label class="project">Сайт, який перевіряєте
-  <input id="project" type="text" placeholder="example.com" maxlength="250" autocomplete="off">
-</label>
-<div class="stats">
-  <strong id="progress-text"></strong>
-  <span id="stats-text"></span>
-</div>
-<progress id="progress" aria-label="Прогрес аудиту"></progress>
-<div id="controls">
-  <div class="controls">
-    <label>Розділ
-      <select id="section-picker"><option value="">Усі розділи</option></select>
+<section class="overview" aria-label="Прогрес та результати">
+  <div class="overview-head">
+    <label>Сайт, який перевіряєте
+      <input id="project" type="text" placeholder="example.com" maxlength="250" autocomplete="off">
     </label>
-    <label>Фільтр
-      <select id="filter">
-        <option value="all">Усі</option>
-        <option value="pending">Не перевірено</option>
-        <option value="issue">Проблеми</option>
-        <option value="critical">Критичні</option>
-      </select>
-    </label>
+    <div>
+      <span class="progress-label">Прогрес аудиту</span>
+      <strong id="progress-text"></strong>
+      <progress id="progress" aria-label="Прогрес аудиту"></progress>
+    </div>
   </div>
-  <div class="toolbar">
-    <button id="copy">Копіювати звіт</button>
-    <button id="csv">Завантажити CSV</button>
-    <button id="print">Друк / PDF</button>
-    <button id="reset">Скинути</button>
+  <dl class="stats">
+    <div class="stat"><dt>Гаразд</dt><dd class="ok" id="count-ok"></dd></div>
+    <div class="stat"><dt>Проблеми</dt><dd class="issue" id="count-issue"></dd></div>
+    <div class="stat"><dt>Не стосується</dt><dd id="count-na"></dd></div>
+    <div class="stat"><dt>Залишилося</dt><dd id="count-pending"></dd></div>
+  </dl>
+  <span id="stats-text" hidden></span>
+</section>
+<div id="controls">
+  <div class="controls-row">
+    <div class="controls">
+      <label>Розділ
+        <select id="section-picker"><option value="">Усі розділи</option></select>
+      </label>
+      <label>Фільтр
+        <select id="filter">
+          <option value="all">Усі</option>
+          <option value="pending">Не перевірено</option>
+          <option value="issue">Проблеми</option>
+          <option value="critical">Критичні</option>
+        </select>
+      </label>
+    </div>
+    <div class="toolbar">
+      <button id="copy">Копіювати звіт</button>
+      <button id="csv">Завантажити CSV</button>
+      <button id="print">Друк / PDF</button>
+      <button id="reset">Скинути</button>
+    </div>
   </div>
   <small id="storage-hint">Прогрес і нотатки автоматично зберігаються в цьому браузері.</small>
 </div>
@@ -148,9 +216,9 @@ const checklist = byId("checklist");
 for (const section of sections) {
   picker.add(new Option(section.title, section.id));
   const details = element("details");
-  details.open = true;
+  details.open = section === sections[0];
   const summary = element("summary", section.title);
-  section.counter = element("span");
+  section.counter = element("span", "", "section-count");
   summary.append(section.counter);
   details.append(summary);
   section.view = details;
@@ -158,6 +226,7 @@ for (const section of sections) {
 
   for (const check of section.checks) {
     const card = element("article", "", "check");
+    const copy = element("div");
     const title = element("h3", check.title);
     title.append(element("span", priorities[check.priority], "badge " + check.priority));
     const statuses = element("div", "", "statuses");
@@ -167,6 +236,7 @@ for (const section of sections) {
     for (const status of ["ok", "issue", "na"]) {
       const button = element("button", labels[status]);
       button.type = "button";
+      button.dataset.status = status;
       button.addEventListener("click", () => {
         const previous = result(check);
         updateResult(check, {...previous, status: previous.status === status ? "pending" : status});
@@ -175,7 +245,7 @@ for (const section of sections) {
       check.buttons[status] = button;
       statuses.append(button);
     }
-    const toggle = element("button", "Додати нотатку");
+    const toggle = element("button", "Додати нотатку", "note-toggle");
     toggle.type = "button";
     statuses.append(toggle);
     const noteLabel = element("label", "Нотатка", "notes");
@@ -198,7 +268,8 @@ for (const section of sections) {
       updateResult(check, {...result(check), note: note.value});
       toggle.textContent = note.value ? "Редагувати нотатку" : "Додати нотатку";
     });
-    card.append(title, element("p", check.description), statuses, noteLabel);
+    copy.append(title, element("p", check.description));
+    card.append(copy, statuses, noteLabel);
     details.append(card);
     Object.assign(check, {view: card, note, noteLabel, toggle});
   }
@@ -227,6 +298,7 @@ function refresh() {
     section.view.hidden = !sectionVisible || Boolean(picker.value && picker.value !== section.id);
     anyVisible ||= !section.view.hidden;
   }
+  for (const [status, count] of Object.entries(counts)) byId("count-" + status).textContent = count;
   const done = checks.length - counts.pending;
   byId("progress-text").textContent = done + " із " + checks.length + " перевірено (" +
     Math.round(done / checks.length * 100) + "%)";
@@ -238,7 +310,14 @@ function refresh() {
   byId("empty").hidden = anyVisible;
 }
 
-filter.addEventListener("change", refresh);
+filter.addEventListener("change", () => {
+  refresh();
+  if (filter.value !== "all") {
+    for (const section of sections) {
+      if (!section.view.hidden) section.view.open = true;
+    }
+  }
+});
 picker.addEventListener("change", () => {
   const selected = sections.find(section => section.id === picker.value);
   if (selected) selected.view.open = true;

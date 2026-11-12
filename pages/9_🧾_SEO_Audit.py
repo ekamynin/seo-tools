@@ -4,9 +4,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
-st.set_page_config(page_title="Технічний SEO-аудит", page_icon="🧾", layout="wide")
-st.title("Технічний SEO-аудит")
-st.caption("Позначайте результати перевірок, додавайте нотатки й експортуйте звіт.")
+st.set_page_config(page_title="Technical Audit", page_icon="🧾", layout="wide")
+st.title("Technical Audit")
 
 assets = Path(__file__).resolve().parents[1] / "seo_audit"
 template = (assets / "checklist.html").read_text(encoding="utf-8")
