@@ -33,13 +33,15 @@ logo_data = b64encode(logo_path.read_bytes()).decode("ascii")
 # Show the square logo within the supplied image.
 st.markdown(
     f"""
-<h1 id="seo-tools" style="display:flex; align-items:center; gap:.55rem;">
-  <span>🛠️ SEO Tools</span>
-  <span style="display:block; position:relative; overflow:hidden; flex:none;
-               width:1em; height:1em; border-radius:.16em;">
-    <img src="data:image/png;base64,{logo_data}" alt="iProspect"
-         style="position:absolute; width:162.78%; max-width:none; height:auto;
-                left:-37.78%; top:-7.5%;">
+<h1 id="seo-tools">
+  <span style="display:inline-flex; align-items:center; gap:.55rem;">
+    <span>🛠️ SEO Tools</span>
+    <span style="display:block; position:relative; overflow:hidden; flex:none;
+                 width:1em; height:1em; border-radius:.16em;">
+      <img src="data:image/png;base64,{logo_data}" alt="iProspect"
+           style="position:absolute; width:162.78%; max-width:none; height:auto;
+                  left:-37.78%; top:-7.5%;">
+    </span>
   </span>
 </h1>
 """,
