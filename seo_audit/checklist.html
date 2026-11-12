@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чекліст технічного SEO-аудиту</title>
+<style>
+:root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
+body { margin: 0; padding: 0 4px 12px; color: CanvasText; background: Canvas; }
+* { box-sizing: border-box; }
+button, input, select, textarea { font: inherit; }
+button, input, select, textarea, summary { border: 1px solid GrayText; border-radius: 8px; }
+button, summary, select { cursor: pointer; }
+button, input, select, textarea { padding: .55rem .7rem; }
+input, textarea, select { background: Canvas; color: CanvasText; }
+button { background: ButtonFace; color: ButtonText; }
+button[aria-pressed=true] { background: #19644f; color: white; border-color: #19644f; }
+button:hover, summary:hover { border-color: #33836b; }
+label { display: grid; gap: .35rem; }
+.project { max-width: 33rem; }
+.toolbar, .statuses, .controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.stats { display: flex; flex-wrap: wrap; gap: .4rem 1.3rem; margin-block: .55rem 1rem; }
+progress { width: 100%; height: .65rem; accent-color: #248369; }
+#controls { margin: 1rem 0; display: grid; gap: .7rem; }
+.controls label { display: flex; align-items: center; flex-wrap: wrap; }
+#feedback { margin: .5rem 0; }
+#feedback:empty { margin: 0; }
+small { line-height: 1.4; }
+details { margin-block: .55rem; }
+summary { padding: .65rem .8rem; font-weight: 650; }
+summary span { margin-inline-start: .55rem; font-weight: 400; }
+.check { border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); padding: .75rem .8rem; }
+.check h3 { font-size: 1rem; margin: 0 0 .35rem; }
+.check p { margin: 0 0 .6rem; line-height: 1.45; }
+.badge { display: inline-block; font-size: .72rem; padding: .12rem .4rem; margin-inline-start: .4rem; border-radius: .3rem; background: #e5eaf0; color: #334155; white-space: nowrap; }
+.badge.critical { background: #fde3df; color: #8a261e; }
+.badge.important { background: #faedcf; color: #674c09; }
+.notes { margin-top: .5rem; }
+textarea { width: 100%; resize: vertical; }
+dialog { max-width: min(95vw, 44rem); width: 100%; border: 1px solid GrayText; border-radius: 10px; color: CanvasText; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<label class="project">Сайт, який перевіряєте
+  <input id="project" type="text" placeholder="example.com" maxlength="250" autocomplete="off">
+</label>
+<div class="stats">
+  <strong id="progress-text"></strong>
+  <span id="stats-text"></span>
+</div>
+<progress id="progress" aria-label="Прогрес аудиту"></progress>
+<div id="controls">
+  <div class="controls">
+    <label>Розділ
+      <select id="section-picker"><option value="">Усі розділи</option></select>
+    </label>
+    <label>Фільтр
+      <select id="filter">
+        <option value="all">Усі</option>
+        <option value="pending">Не перевірено</option>
+        <option value="issue">Проблеми</option>
+        <option value="critical">Критичні</option>
+      </select>
+    </label>
+  </div>
+  <div class="toolbar">
+    <button id="copy">Копіювати звіт</button>
+    <button id="csv">Завантажити CSV</button>
+    <button id="print">Друк / PDF</button>
+    <button id="reset">Скинути</button>
+  </div>
+  <small id="storage-hint">Прогрес і нотатки автоматично зберігаються в цьому браузері.</small>
+</div>
+<p id="feedback" role="status"></p>
+<main id="checklist" aria-label="Чекліст аудиту"></main>
+<p id="empty" hidden>Немає перевірок за вибраними фільтрами.</p>
+<dialog id="copy-dialog">
+  <label>Звіт
+    <textarea id="report-text" rows="12" readonly></textarea>
+  </label>
+  <form method="dialog"><button>Закрити</button></form>
+</dialog>
+<dialog id="reset-dialog">
+  <p>Скинути назву сайту, статуси та нотатки?</p>
+  <form method="dialog" class="toolbar">
+    <button value="cancel" autofocus>Скасувати</button>
+    <button id="confirm-reset" value="reset">Скинути аудит</button>
+  </form>
+</dialog>
+<script type="application/json" id="checklist-data">{{CHECKLIST_DATA}}</script>
+<script>
+const byId = id => document.getElementById(id);
+const sections = JSON.parse(byId("checklist-data").textContent);
+const storageKey = "seo-tools:technical-audit:v1";
+const storageError = "Автозбереження недоступне. Експортуйте результати перед закриттям сторінки.";
+const labels = {ok: "Гаразд", issue: "Проблема", na: "Не стосується", pending: "Не перевірено"};
+const priorities = {critical: "Критично", important: "Важливо", recommended: "Бажано"};
+const order = Object.keys(priorities);
+const checks = sections.flatMap(section => section.checks.map((check, index) =>
+  Object.assign(check, {id: section.id + "-" + (index + 1), section: section.title})));
+const newAudit = () => ({project: "", results: {}});
+let audit = newAudit();
+try {
+  const stored = JSON.parse(localStorage.getItem(storageKey));
+  if (stored && typeof stored.project === "string" && stored.results && typeof stored.results === "object") {
+    audit = stored;
+  }
+} catch {
+  byId("storage-hint").textContent = storageError;
+}
+
+function save() {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(audit));
+  } catch {
+    byId("storage-hint").textContent = storageError;
+  }
+}
+
+function element(tag, content, className) {
+  const node = document.createElement(tag);
+  if (content) node.textContent = content;
+  if (className) node.className = className;
+  return node;
+}
+
+function result(check) {
+  return audit.results[check.id] ?? {status: "pending", note: ""};
+}
+
+function updateResult(check, next) {
+  if (next.status === "pending" && !next.note) delete audit.results[check.id];
+  else audit.results[check.id] = next;
+  save();
+}
+
+const project = byId("project");
+project.value = audit.project;
+project.addEventListener("input", () => {
+  audit.project = project.value;
+  save();
+});
+
+const picker = byId("section-picker");
+const filter = byId("filter");
+const checklist = byId("checklist");
+for (const section of sections) {
+  picker.add(new Option(section.title, section.id));
+  const details = element("details");
+  details.open = true;
+  const summary = element("summary", section.title);
+  section.counter = element("span");
+  summary.append(section.counter);
+  details.append(summary);
+  section.view = details;
+  checklist.append(details);
+
+  for (const check of section.checks) {
+    const card = element("article", "", "check");
+    const title = element("h3", check.title);
+    title.append(element("span", priorities[check.priority], "badge " + check.priority));
+    const statuses = element("div", "", "statuses");
+    statuses.setAttribute("role", "group");
+    statuses.setAttribute("aria-label", check.title);
+    check.buttons = {};
+    for (const status of ["ok", "issue", "na"]) {
+      const button = element("button", labels[status]);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        const previous = result(check);
+        updateResult(check, {...previous, status: previous.status === status ? "pending" : status});
+        refresh();
+      });
+      check.buttons[status] = button;
+      statuses.append(button);
+    }
+    const toggle = element("button", "Додати нотатку");
+    toggle.type = "button";
+    statuses.append(toggle);
+    const noteLabel = element("label", "Нотатка", "notes");
+    noteLabel.hidden = true;
+    noteLabel.id = "note-" + check.id;
+    toggle.setAttribute("aria-controls", noteLabel.id);
+    toggle.setAttribute("aria-expanded", "false");
+    const note = element("textarea");
+    note.rows = 3;
+    note.maxLength = 1200;
+    note.placeholder = "Додайте URL, факти та наступний крок…";
+    note.value = result(check).note;
+    noteLabel.append(note);
+    toggle.addEventListener("click", () => {
+      noteLabel.hidden = !noteLabel.hidden;
+      toggle.setAttribute("aria-expanded", String(!noteLabel.hidden));
+      if (!noteLabel.hidden) note.focus();
+    });
+    note.addEventListener("input", () => {
+      updateResult(check, {...result(check), note: note.value});
+      toggle.textContent = note.value ? "Редагувати нотатку" : "Додати нотатку";
+    });
+    card.append(title, element("p", check.description), statuses, noteLabel);
+    details.append(card);
+    Object.assign(check, {view: card, note, noteLabel, toggle});
+  }
+}
+
+function refresh() {
+  const counts = {ok: 0, issue: 0, na: 0, pending: 0};
+  let anyVisible = false;
+  for (const section of sections) {
+    let completed = 0;
+    let sectionVisible = false;
+    for (const check of section.checks) {
+      const {status, note} = result(check);
+      counts[status] += 1;
+      if (status !== "pending") completed += 1;
+      for (const [value, button] of Object.entries(check.buttons)) {
+        button.setAttribute("aria-pressed", String(value === status));
+      }
+      check.toggle.textContent = note ? "Редагувати нотатку" : "Додати нотатку";
+      const matches = filter.value === "all" || filter.value === status ||
+        (filter.value === "critical" && check.priority === "critical");
+      check.view.hidden = !matches;
+      sectionVisible ||= matches;
+    }
+    section.counter.textContent = completed + " / " + section.checks.length;
+    section.view.hidden = !sectionVisible || Boolean(picker.value && picker.value !== section.id);
+    anyVisible ||= !section.view.hidden;
+  }
+  const done = checks.length - counts.pending;
+  byId("progress-text").textContent = done + " із " + checks.length + " перевірено (" +
+    Math.round(done / checks.length * 100) + "%)";
+  byId("stats-text").textContent = "Гаразд " + counts.ok + " · Проблеми " + counts.issue +
+    " · Не стосується " + counts.na + " · Залишилося " + counts.pending;
+  const progress = byId("progress");
+  progress.max = checks.length;
+  progress.value = done;
+  byId("empty").hidden = anyVisible;
+}
+
+filter.addEventListener("change", refresh);
+picker.addEventListener("change", () => {
+  const selected = sections.find(section => section.id === picker.value);
+  if (selected) selected.view.open = true;
+  refresh();
+});
+refresh();
+
+const prioritized = [...checks].sort((a, b) => order.indexOf(a.priority) - order.indexOf(b.priority));
+function report() {
+  const issues = prioritized.filter(check => result(check).status === "issue");
+  const lines = ["Технічний SEO-аудит", "Сайт: " + (audit.project.trim() || "не вказано"),
+    byId("progress-text").textContent, byId("stats-text").textContent, ""];
+  if (!issues.length) lines.push("Зафіксованих проблем немає.");
+  for (const [index, check] of issues.entries()) {
+    lines.push((index + 1) + ". [" + priorities[check.priority] + "] " + check.title,
+      check.section, check.description);
+    if (result(check).note) lines.push("Нотатка: " + result(check).note);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+byId("copy").addEventListener("click", async () => {
+  const text = report();
+  try {
+    await navigator.clipboard.writeText(text);
+    byId("feedback").textContent = "Звіт скопійовано.";
+  } catch {
+    const field = byId("report-text");
+    field.value = text;
+    byId("copy-dialog").showModal();
+    field.select();
+  }
+});
+
+function csvCell(value) {
+  const text = String(value);
+  const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/.test(text) ? "'" + text : text;
+  return '"' + safe.replaceAll('"', '""') + '"';
+}
+
+byId("csv").addEventListener("click", () => {
+  const rows = [["Сайт", "Розділ", "Перевірка", "Опис", "Пріоритет", "Статус", "Нотатка"]];
+  for (const check of prioritized) {
+    const {status, note} = result(check);
+    rows.push([audit.project, check.section, check.title, check.description,
+      priorities[check.priority], labels[status], note]);
+  }
+  const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF", csv], {type: "text/csv;charset=utf-8"}));
+  const link = element("a");
+  link.href = url;
+  link.download = "seo-audit.csv";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+byId("print").addEventListener("click", () => {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    byId("feedback").textContent = "Дозвольте спливні вікна, щоб відкрити звіт для друку.";
+    return;
+  }
+  printWindow.opener = null;
+  printWindow.document.title = "Звіт технічного SEO-аудиту";
+  const printable = printWindow.document.createElement("pre");
+  printable.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;font:11pt/1.5 system-ui,sans-serif";
+  printable.textContent = report();
+  printWindow.document.body.append(printable);
+  printWindow.focus();
+  printWindow.print();
+});
+
+byId("reset").addEventListener("click", () => byId("reset-dialog").showModal());
+byId("confirm-reset").addEventListener("click", () => {
+  audit = newAudit();
+  save();
+  project.value = "";
+  filter.value = "all";
+  picker.value = "";
+  for (const check of checks) {
+    check.note.value = "";
+    check.noteLabel.hidden = true;
+    check.toggle.setAttribute("aria-expanded", "false");
+  }
+  refresh();
+  byId("feedback").textContent = "Аудит скинуто.";
+});
+</script>
+</body>
+</html>

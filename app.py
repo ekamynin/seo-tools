@@ -114,3 +114,14 @@ with col8:
         "доступність URL для вибраного робота."
     )
     st.page_link("pages/8_🤖_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🤖")
+
+st.divider()
+col9, _, _, _ = st.columns(4, gap="large")
+
+with col9:
+    st.markdown("### 🧾 Технічний SEO-аудит")
+    st.markdown(
+        "Чекліст із 126 перевірок. Відмічайте проблеми, додавайте нотатки "
+        "та експортуйте звіт за пріоритетом."
+    )
+    st.page_link("pages/9_🧾_SEO_Audit.py", label="Відкрити чекліст", icon="🧾")
