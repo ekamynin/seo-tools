@@ -1,4 +1,7 @@
+from base64 import b64encode
 from datetime import datetime
+from pathlib import Path
+
 import streamlit as st
 from cache import fetch_full_catalog
 
@@ -24,7 +27,24 @@ with st.sidebar:
             st.session_state.pop(key, None)
         st.rerun()
 
-st.title("🛠️ SEO Tools")
+logo_path = Path(__file__).resolve().parent / "assets" / "iprospect-logo.png"
+logo_data = b64encode(logo_path.read_bytes()).decode("ascii")
+
+# Show the square logo within the supplied image.
+st.markdown(
+    f"""
+<h1 id="seo-tools" style="display:flex; align-items:center; gap:.55rem;">
+  <span>🛠️ SEO Tools</span>
+  <span style="display:block; position:relative; overflow:hidden; flex:none;
+               width:1em; height:1em; border-radius:.16em;">
+    <img src="data:image/png;base64,{logo_data}" alt="iProspect"
+         style="position:absolute; width:162.78%; max-width:none; height:auto;
+                left:-37.78%; top:-7.5%;">
+  </span>
+</h1>
+""",
+    unsafe_allow_html=True,
+)
 st.caption("Внутрішні інструменти для SEO-команди")
 st.divider()
 
