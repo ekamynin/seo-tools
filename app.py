@@ -115,10 +115,10 @@ with col8:
     )
     st.page_link("pages/8_🤖_Robots_Txt_Tester.py", label="Відкрити Robots.txt Tester", icon="🤖")
 
-with st.container(border=True):
-    audit_intro, audit_action = st.columns([3, 1], vertical_alignment="center")
-    with audit_intro:
-        st.markdown("### Technical Audit Checklist")
-        st.markdown("126 перевірок у 19 розділах · нотатки та звіт")
-    with audit_action:
-        st.page_link("pages/9_🧾_SEO_Audit.py", label="Відкрити чекліст", icon="🧾")
+st.divider()
+col9, _, _, _ = st.columns(4, gap="large")
+
+with col9:
+    st.markdown("### 🧾 Technical Audit Checklist")
+    st.markdown("126 перевірок у 19 розділах · нотатки та звіт")
+    st.page_link("pages/9_🧾_SEO_Audit.py", label="Відкрити чекліст", icon="🧾")
